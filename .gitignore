@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+resultados/
+capes_exports/
+historico.json
+*.log

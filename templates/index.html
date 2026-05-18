@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RSL Buscador — Vieses Algorítmicos</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --azul:      #1e3a5f;
+      --azul-md:   #2563eb;
+      --azul-lt:   #dbeafe;
+      --verde:     #16a34a;
+      --verde-lt:  #dcfce7;
+      --amber:     #d97706;
+      --amber-lt:  #fef3c7;
+      --vermelho:  #dc2626;
+      --verm-lt:   #fee2e2;
+      --roxo:      #7c3aed;
+      --roxo-lt:   #ede9fe;
+      --cinza-bg:  #f1f5f9;
+      --cinza-brd: #e2e8f0;
+      --branco:    #ffffff;
+      --texto:     #1e293b;
+      --texto-sm:  #64748b;
+    }
+
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--cinza-bg); color: var(--texto); min-height: 100vh; }
+
+    /* ── header ── */
+    header { background: var(--azul); color: #fff; padding: 1rem 2rem; display: flex; align-items: center; gap: 1rem; box-shadow: 0 2px 8px rgba(0,0,0,.25); }
+    header h1 { font-size: 1.2rem; font-weight: 700; }
+    header p  { font-size: .78rem; color: #93c5fd; margin-top: 2px; }
+
+    /* ── tabs ── */
+    .tab-bar { background: var(--branco); border-bottom: 1px solid var(--cinza-brd); display: flex; gap: 0; padding: 0 2rem; }
+    .tab-btn {
+      padding: .85rem 1.4rem; font-size: .82rem; font-weight: 600; border: none;
+      background: none; cursor: pointer; color: var(--texto-sm); border-bottom: 3px solid transparent;
+      transition: color .15s, border-color .15s; display: flex; align-items: center; gap: .45rem;
+    }
+    .tab-btn:hover  { color: var(--azul-md); }
+    .tab-btn.ativa  { color: var(--azul-md); border-bottom-color: var(--azul-md); }
+    .tab-btn.ativa.roxo { color: var(--roxo); border-bottom-color: var(--roxo); }
+    .tab-btn.ativa.verde { color: var(--verde); border-bottom-color: var(--verde); }
+    .tab-btn.ativa.amber { color: var(--amber); border-bottom-color: var(--amber); }
+
+    /* ── painéis ── */
+    .tab-panel { display: none; }
+    .tab-panel.ativa { display: block; }
+
+    /* ── layout interno ── */
+    .pg { max-width: 1300px; margin: 1.5rem auto; padding: 0 1.25rem; }
+    .grid-2 { display: grid; grid-template-columns: 380px 1fr; gap: 1.25rem; align-items: start; }
+    .grid-full { display: grid; grid-template-columns: 1fr; gap: 1.25rem; }
+
+    /* ── card ── */
+    .card { background: var(--branco); border: 1px solid var(--cinza-brd); border-radius: 12px; padding: 1.5rem; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+    .card-title { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; color: var(--texto-sm); margin-bottom: 1.1rem; }
+
+    /* ── form ── */
+    .fg { margin-bottom: 1rem; }
+    label { display: block; font-size: .82rem; font-weight: 600; margin-bottom: .35rem; }
+    label span { font-weight: 400; color: var(--texto-sm); }
+    textarea, input[type=number], select {
+      width: 100%; border: 1px solid var(--cinza-brd); border-radius: 8px;
+      padding: .6rem .8rem; font-size: .84rem; font-family: inherit; color: var(--texto);
+      background: #fafafa; transition: border-color .15s, box-shadow .15s;
+    }
+    textarea { min-height: 155px; resize: vertical; }
+    textarea:focus, input:focus, select:focus {
+      outline: none; border-color: var(--azul-md);
+      box-shadow: 0 0 0 3px rgba(37,99,235,.14); background: #fff;
+    }
+
+    /* ── checkboxes de base ── */
+    .bases-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .5rem; }
+    .base-opt {
+      display: flex; align-items: center; gap: .5rem;
+      background: var(--cinza-bg); border: 1px solid var(--cinza-brd);
+      border-radius: 8px; padding: .55rem .7rem; cursor: pointer; user-select: none;
+      transition: background .15s, border-color .15s;
+    }
+    .base-opt:has(input:checked) { background: var(--azul-lt); border-color: var(--azul-md); }
+    .base-opt input { accent-color: var(--azul-md); width: 15px; height: 15px; }
+    .base-opt .nome { font-size: .8rem; font-weight: 600; }
+    .base-opt .sub  { font-size: .69rem; color: var(--texto-sm); }
+
+    .anos-row { display: flex; gap: .6rem; align-items: center; }
+    .anos-row input { text-align: center; }
+    .anos-sep { color: var(--texto-sm); }
+
+    /* ── botões ── */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: .45rem;
+      padding: .72rem 1.2rem; font-size: .87rem; font-weight: 700; border: none;
+      border-radius: 8px; cursor: pointer; transition: background .15s, transform .1s; width: 100%;
+    }
+    .btn:active { transform: scale(.98); }
+    .btn:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+    .btn-azul  { background: var(--azul-md); color: #fff; margin-top: 1.1rem; }
+    .btn-azul:hover:not(:disabled)  { background: #1d4ed8; }
+    .btn-roxo  { background: var(--roxo); color: #fff; }
+    .btn-roxo:hover:not(:disabled)  { background: #6d28d9; }
+    .btn-verde { background: var(--verde); color: #fff; }
+    .btn-verde:hover:not(:disabled) { background: #15803d; }
+    .btn-amber { background: var(--amber); color: #fff; }
+    .btn-amber:hover:not(:disabled) { background: #b45309; }
+
+    /* ── log ── */
+    .log-box {
+      background: #0f172a; border-radius: 10px; padding: 1rem;
+      height: 380px; overflow-y: auto; font-family: 'Cascadia Code','Fira Code','Consolas',monospace;
+      font-size: .77rem; line-height: 1.6; color: #e2e8f0; scroll-behavior: smooth;
+    }
+    .log-box p { margin: 0; white-space: pre-wrap; word-break: break-word; }
+    .log-etapa { color: #60a5fa; font-weight: 700; }
+    .log-ok    { color: #4ade80; }
+    .log-erro  { color: #f87171; }
+    .log-aviso { color: #fbbf24; }
+    .log-vazio { color: #475569; font-style: italic; }
+
+    /* ── progresso ── */
+    .prog-wrap { height: 6px; background: var(--cinza-brd); border-radius: 99px; overflow: hidden; margin-bottom: .75rem; }
+    .prog-bar  { height: 100%; width: 0%; background: linear-gradient(90deg,var(--azul-md),#60a5fa); border-radius: 99px; transition: width .3s ease; }
+    .prog-bar.indeterminate { width: 40%; animation: slide 1.5s ease-in-out infinite alternate; }
+    @keyframes slide { from{transform:translateX(-100%)} to{transform:translateX(250%)} }
+    @keyframes spin  { to{transform:rotate(360deg)} }
+    .spinner { width: 15px; height: 15px; border: 2px solid rgba(255,255,255,.35); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; }
+
+    /* ── badge status ── */
+    .badge {
+      display: inline-flex; align-items: center; gap: .4rem; font-size: .75rem;
+      font-weight: 600; padding: .22rem .65rem; border-radius: 99px;
+      background: var(--cinza-bg); color: var(--texto-sm);
+    }
+    .badge.run   { background: var(--azul-lt);  color: var(--azul-md); }
+    .badge.done  { background: var(--verde-lt); color: var(--verde); }
+    .badge.error { background: var(--verm-lt);  color: var(--vermelho); }
+    .pulse { width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: pulse 1.2s ease infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+
+    /* ── alerta confirmação ── */
+    .alerta-conf {
+      display: none; background: var(--amber-lt); border: 1px solid #f59e0b;
+      border-radius: 10px; padding: .9rem 1.1rem; gap: .9rem; align-items: flex-start;
+    }
+    .alerta-conf.vis { display: flex; }
+    .alerta-conf .icone { font-size: 1.3rem; flex-shrink: 0; }
+    .alerta-conf .texto { flex: 1; font-size: .83rem; }
+    .alerta-conf .texto strong { display: block; margin-bottom: .2rem; }
+    .btn-conf { padding: .45rem 1rem; background: var(--amber); color: #fff; font-size: .8rem; font-weight: 700; border: none; border-radius: 7px; cursor: pointer; white-space: nowrap; }
+    .btn-conf:hover { background: #b45309; }
+
+    /* ── resultado final ── */
+    .resultado-box {
+      display: none; border-radius: 10px; padding: .9rem 1.1rem;
+      align-items: center; gap: 1rem;
+    }
+    .resultado-box.vis { display: flex; }
+    .resultado-box.verde { background: var(--verde-lt); border: 1px solid #86efac; }
+    .resultado-box.roxo  { background: var(--roxo-lt);  border: 1px solid #c4b5fd; }
+    .resultado-box .stats { flex: 1; }
+    .resultado-box .stats strong { font-size: 1.05rem; }
+    .resultado-box .stats small  { display: block; color: var(--texto-sm); font-size: .78rem; }
+    .btn-dl { display: inline-flex; align-items: center; gap: .4rem; padding: .55rem 1.1rem; color: #fff; font-size: .82rem; font-weight: 700; border: none; border-radius: 8px; text-decoration: none; cursor: pointer; white-space: nowrap; }
+    .btn-dl.verde { background: var(--verde); } .btn-dl.verde:hover { background: #15803d; }
+    .btn-dl.roxo  { background: var(--roxo);  } .btn-dl.roxo:hover  { background: #6d28d9; }
+
+    /* ── seletor de arquivo ── */
+    .file-picker { display: flex; gap: .6rem; align-items: center; }
+    .file-picker select { flex: 1; }
+    .file-picker button { padding: .6rem .9rem; background: var(--cinza-bg); border: 1px solid var(--cinza-brd); border-radius: 8px; cursor: pointer; font-size: .8rem; color: var(--texto-sm); }
+    .file-picker button:hover { background: #e2e8f0; }
+
+    /* ── progress filtrar ── */
+    .filtrar-stats { display: flex; gap: 1rem; margin-top: .5rem; }
+    .fstat { flex: 1; text-align: center; padding: .6rem; border-radius: 8px; font-size: .85rem; }
+    .fstat strong { display: block; font-size: 1.5rem; }
+    .fstat.i { background: var(--verde-lt); color: var(--verde); }
+    .fstat.e { background: var(--verm-lt);  color: var(--vermelho); }
+    .fstat.p { background: var(--amber-lt); color: var(--amber); }
+
+    /* ── histórico ── */
+    table { width: 100%; border-collapse: collapse; font-size: .81rem; }
+    th, td { padding: .6rem .85rem; text-align: left; border-bottom: 1px solid var(--cinza-brd); vertical-align: middle; }
+    th { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--texto-sm); background: var(--cinza-bg); }
+    tr:hover td { background: #f8fafc; }
+    .bbadge { display: inline-block; font-size: .67rem; font-weight: 700; padding: .12rem .4rem; border-radius: 4px; margin: 1px; text-transform: uppercase; }
+    .bb-scielo { background: #dbeafe; color: #1d4ed8; }
+    .bb-bdtd   { background: #dcfce7; color: #15803d; }
+    .bb-capes  { background: #fef9c3; color: #a16207; }
+    .dpill { display: inline-block; font-size: .71rem; background: #f1f5f9; border: 1px solid #e2e8f0; padding: .08rem .4rem; border-radius: 99px; margin: 1px; color: var(--texto-sm); max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+    .btn-dlh { display: inline-flex; align-items: center; gap: .3rem; font-size: .76rem; font-weight: 600; color: var(--azul-md); text-decoration: none; padding: .28rem .65rem; border-radius: 6px; border: 1px solid var(--azul-lt); transition: background .15s; }
+    .btn-dlh:hover { background: var(--azul-lt); }
+    #sem-hist { color: var(--texto-sm); font-size: .84rem; font-style: italic; padding: .8rem 0; }
+
+    @media (max-width: 860px) { .grid-2 { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+
+<header>
+  <svg width="34" height="34" viewBox="0 0 34 34" fill="none">
+    <rect width="34" height="34" rx="8" fill="#2563eb"/>
+    <path d="M8 11h18M8 17h12M8 23h15" stroke="white" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="26" cy="23" r="5" fill="#60a5fa"/>
+    <path d="M24.2 23l1.4 1.4 2.2-2.8" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+  <div>
+    <h1>RSL Buscador</h1>
+    <p>Revisão Sistemática da Literatura — Vieses Algorítmicos e Racismo Estrutural</p>
+  </div>
+</header>
+
+<!-- ── abas ── -->
+<div class="tab-bar">
+  <button class="tab-btn ativa"  onclick="ativarAba('busca',    this)"          >🔍 Busca</button>
+  <button class="tab-btn roxo"   onclick="ativarAba('filtrar',  this, 'roxo')"  >🤖 Filtrar com IA</button>
+  <button class="tab-btn verde"  onclick="ativarAba('pdfs',     this, 'verde')" >📥 Baixar PDFs</button>
+  <button class="tab-btn amber"  onclick="ativarAba('obsidian', this, 'amber')" >🕸 Exportar Obsidian</button>
+</div>
+
+<!-- ═══════════════════════════ ABA: BUSCA ═══════════════════════════ -->
+<div id="tab-busca" class="tab-panel ativa">
+  <div class="pg">
+    <div class="grid-2">
+
+      <!-- form -->
+      <div class="card">
+        <div class="card-title">Configuração da Busca</div>
+        <div class="fg">
+          <label for="descritores">Descritores <span>(um por linha)</span></label>
+          <textarea id="descritores">racismo algoritmo
+racismo algorítmico
+viés algorítmico
+discriminação racial algoritmo
+inteligência artificial população negra
+algoritmo saúde raça
+policiamento preditivo racismo
+algoritmo mercado trabalho discriminação
+algorithmic discrimination
+algorithmic bias race
+artificial intelligence racial discrimination
+predictive policing racial bias
+machine learning racism
+algorithmic racism</textarea>
+        </div>
+        <div class="fg">
+          <label>Bases de dados</label>
+          <div class="bases-grid">
+            <label class="base-opt"><input type="checkbox" value="scielo" checked><div><div class="nome">SciELO</div><div class="sub">Selenium</div></div></label>
+            <label class="base-opt"><input type="checkbox" value="bdtd"   checked><div><div class="nome">BDTD</div><div class="sub">API REST</div></div></label>
+            <label class="base-opt"><input type="checkbox" value="capes"       ><div><div class="nome">CAPES</div><div class="sub">Login manual</div></div></label>
+          </div>
+        </div>
+        <div class="fg">
+          <label>Recorte temporal</label>
+          <div class="anos-row">
+            <input type="number" id="ano-inicio" value="2020" min="2000" max="2030">
+            <span class="anos-sep">—</span>
+            <input type="number" id="ano-fim"    value="2025" min="2000" max="2030">
+          </div>
+        </div>
+        <button class="btn btn-azul" id="btn-buscar" onclick="iniciarBusca()">
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="6.5" cy="6.5" r="4.5" stroke="white" stroke-width="1.7"/><path d="M10 10l3 3" stroke="white" stroke-width="1.7" stroke-linecap="round"/></svg>
+          Iniciar Busca
+        </button>
+      </div>
+
+      <!-- log busca -->
+      <div style="display:flex;flex-direction:column;gap:.75rem;">
+        <div class="card" style="padding:1rem 1.4rem">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.65rem;">
+            <div class="card-title" style="margin:0">Log em tempo real</div>
+            <span class="badge" id="badge-busca">Aguardando</span>
+          </div>
+          <div class="prog-wrap"><div class="prog-bar" id="prog-busca"></div></div>
+          <div class="log-box" id="log-busca"><p class="log-vazio">Os logs aparecerão aqui...</p></div>
+        </div>
+        <div class="alerta-conf" id="alerta-capes">
+          <span class="icone">⚠️</span>
+          <div class="texto"><strong>Ação manual necessária</strong><span id="alerta-txt">Conclua no navegador e clique Confirmar.</span></div>
+          <button class="btn-conf" onclick="confirmarCapes()">Confirmar ✓</button>
+        </div>
+        <div class="resultado-box verde" id="res-busca">
+          <div class="stats">
+            <strong id="res-busca-total" style="color:var(--verde)">0</strong>
+            <small id="res-busca-det">artigos únicos encontrados</small>
+          </div>
+          <a id="btn-dl-busca" class="btn-dl verde" href="#" download>
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 1v8M3.5 6l3 2.5 3-2.5" stroke="white" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M1.5 11h10" stroke="white" stroke-width="1.7" stroke-linecap="round"/></svg>
+            Baixar Excel
+          </a>
+        </div>
+      </div>
+
+    </div><!-- /grid-2 -->
+
+    <!-- histórico -->
+    <div class="card" style="margin-top:1.25rem">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">
+        <div class="card-title" style="margin:0">Histórico de Buscas</div>
+        <div id="hist-acoes" style="display:none;gap:.5rem;display:none">
+          <button class="btn btn-sm" onclick="selecionarTodosHist()" id="btn-sel-todos" style="font-size:.78rem;padding:.3rem .7rem;background:var(--azul);color:#fff;border:none;border-radius:6px;cursor:pointer">Selecionar tudo</button>
+          <button class="btn btn-sm" onclick="apagarSelecionadosHist()" style="font-size:.78rem;padding:.3rem .7rem;background:#dc2626;color:#fff;border:none;border-radius:6px;cursor:pointer">Apagar selecionados</button>
+        </div>
+      </div>
+      <p id="sem-hist">Nenhuma busca realizada ainda.</p>
+      <table id="tbl-hist" style="display:none">
+        <thead><tr>
+          <th style="width:1.5rem"><input type="checkbox" id="chk-sel-todos" onchange="toggleTodosHist(this)" title="Selecionar todos"></th>
+          <th>Data</th><th>Descritores</th><th>Bases</th><th>Período</th>
+          <th style="text-align:center">Únicos</th><th style="text-align:center">Download</th>
+        </tr></thead>
+        <tbody id="tbody-hist"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════ ABA: FILTRAR ══════════════════════════ -->
+<div id="tab-filtrar" class="tab-panel">
+  <div class="pg">
+    <div class="grid-2">
+
+      <div class="card">
+        <div class="card-title">Filtrar com IA (Ollama · llama3)</div>
+        <p style="font-size:.83rem;color:var(--texto-sm);margin-bottom:1rem;line-height:1.6">
+          Analisa título e resumo de cada artigo usando o modelo <strong>llama3</strong> local
+          e classifica automaticamente como <strong>I</strong> (incluir),
+          <strong>E</strong> (excluir) ou <strong>P</strong> (pendente),
+          salvando o resultado na própria planilha.
+        </p>
+        <div class="fg">
+          <label>Planilha Excel</label>
+          <div class="file-picker">
+            <select id="sel-filtrar"><option value="">— selecione —</option></select>
+            <button onclick="carregarArquivos('sel-filtrar')">↻</button>
+          </div>
+        </div>
+        <div style="background:var(--roxo-lt);border:1px solid #c4b5fd;border-radius:8px;padding:.8rem 1rem;font-size:.8rem;color:#5b21b6;margin-bottom:.5rem">
+          <strong>Pré-requisito:</strong> Ollama rodando localmente com o modelo llama3.<br>
+          <code style="font-size:.75rem">ollama serve &amp;&amp; ollama pull llama3</code>
+        </div>
+        <button class="btn btn-roxo" id="btn-filtrar" onclick="iniciarFiltrar()">
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M2 4h11M4 7.5h7M6 11h3" stroke="white" stroke-width="1.7" stroke-linecap="round"/></svg>
+          Iniciar Classificação
+        </button>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:.75rem">
+        <div class="card" style="padding:1rem 1.4rem">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.65rem;">
+            <div class="card-title" style="margin:0">Progresso</div>
+            <span class="badge" id="badge-filtrar">Aguardando</span>
+          </div>
+          <div class="prog-wrap"><div class="prog-bar" id="prog-filtrar"></div></div>
+          <div class="filtrar-stats">
+            <div class="fstat i"><strong id="f-inc">0</strong>Incluir</div>
+            <div class="fstat e"><strong id="f-exc">0</strong>Excluir</div>
+            <div class="fstat p"><strong id="f-pen">0</strong>Pendente</div>
+          </div>
+        </div>
+        <div class="card" style="padding:1rem 1.4rem">
+          <div class="log-box" id="log-filtrar"><p class="log-vazio">Aguardando início...</p></div>
+        </div>
+        <div class="resultado-box verde" id="res-filtrar">
+          <div class="stats">
+            <strong style="color:var(--verde)">Classificação concluída ✓</strong>
+            <small id="res-filtrar-det">Resultados salvos na planilha</small>
+          </div>
+          <a id="btn-dl-filtrar" class="btn-dl verde" href="#" download>📥 Baixar Excel</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════ ABA: PDFs ════════════════════════════ -->
+<div id="tab-pdfs" class="tab-panel">
+  <div class="pg">
+    <div class="grid-2">
+
+      <div class="card">
+        <div class="card-title">Download de PDFs via Unpaywall</div>
+        <p style="font-size:.83rem;color:var(--texto-sm);margin-bottom:1rem;line-height:1.6">
+          Para cada artigo com DOI na planilha, consulta o
+          <strong>Unpaywall</strong> (acesso aberto, gratuito) e baixa o PDF quando disponível.
+          Quando não há PDF livre, salva os metadados em <code>.json</code>.
+          Tudo salvo em <code>~/Meu cofre/RSL/pdfs/</code>.
+        </p>
+        <div class="fg">
+          <label>Planilha Excel</label>
+          <div class="file-picker">
+            <select id="sel-pdfs"><option value="">— selecione —</option></select>
+            <button onclick="carregarArquivos('sel-pdfs')">↻</button>
+          </div>
+        </div>
+        <button class="btn btn-verde" id="btn-pdfs" onclick="iniciarPdfs()">
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M7.5 1v9M4 7l3.5 3 3.5-3" stroke="white" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M1.5 13h12" stroke="white" stroke-width="1.7" stroke-linecap="round"/></svg>
+          Iniciar Downloads
+        </button>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:.75rem">
+        <div class="card" style="padding:1rem 1.4rem">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.65rem;">
+            <div class="card-title" style="margin:0">Progresso</div>
+            <span class="badge" id="badge-pdfs">Aguardando</span>
+          </div>
+          <div class="prog-wrap"><div class="prog-bar" id="prog-pdfs"></div></div>
+          <div class="log-box" id="log-pdfs"><p class="log-vazio">Aguardando início...</p></div>
+        </div>
+        <div class="resultado-box verde" id="res-pdfs">
+          <div class="stats">
+            <strong id="res-pdfs-total" style="color:var(--verde)">0</strong>
+            <small id="res-pdfs-det">PDFs baixados</small>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════ ABA: OBSIDIAN ═════════════════════════ -->
+<div id="tab-obsidian" class="tab-panel">
+  <div class="pg">
+    <div class="grid-2">
+
+      <div class="card">
+        <div class="card-title">Exportar Teia para o Obsidian</div>
+        <p style="font-size:.83rem;color:var(--texto-sm);margin-bottom:1rem;line-height:1.6">
+          Gera notas Markdown no vault do Obsidian com <strong>links [[]]</strong>
+          entre artigos que compartilham o mesmo descritor, criando uma teia de
+          conhecimento visualizável no Graph View.
+        </p>
+        <div style="font-size:.8rem;background:var(--amber-lt);border:1px solid #fcd34d;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem;color:#92400e">
+          <strong>Destino:</strong> <code>~/Meu cofre/RSL/</code><br>
+          <span style="color:var(--texto-sm)">artigos/ · descritores/ · MOC - RSL.md</span>
+        </div>
+        <div class="fg">
+          <label>Planilha Excel</label>
+          <div class="file-picker">
+            <select id="sel-obsidian"><option value="">— selecione —</option></select>
+            <button onclick="carregarArquivos('sel-obsidian')">↻</button>
+          </div>
+        </div>
+        <button class="btn btn-amber" id="btn-obsidian" onclick="iniciarObsidian()">
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="7.5" cy="7.5" r="2.5" stroke="white" stroke-width="1.5"/><path d="M7.5 1v2M7.5 12v2M1 7.5h2M12 7.5h2M3.2 3.2l1.4 1.4M10.4 10.4l1.4 1.4M3.2 11.8l1.4-1.4M10.4 4.6l1.4-1.4" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg>
+          Gerar Teia
+        </button>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:.75rem">
+        <div class="card" style="padding:1rem 1.4rem">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.65rem;">
+            <div class="card-title" style="margin:0">Progresso</div>
+            <span class="badge" id="badge-obsidian">Aguardando</span>
+          </div>
+          <div class="prog-wrap"><div class="prog-bar" id="prog-obsidian"></div></div>
+          <div class="log-box" id="log-obsidian"><p class="log-vazio">Aguardando início...</p></div>
+        </div>
+        <div class="resultado-box roxo" id="res-obsidian">
+          <div class="stats">
+            <strong id="res-obs-total" style="color:var(--roxo)">0</strong>
+            <small id="res-obs-det">notas geradas no vault</small>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═════════════════════════════ JS ══════════════════════════════════ -->
+<script>
+// ── tabs ──────────────────────────────────────────────────────────────────────
+function ativarAba(id, btn, cor) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('ativa'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('ativa','roxo','verde','amber'));
+  document.getElementById('tab-' + id).classList.add('ativa');
+  btn.classList.add('ativa');
+  if (cor) btn.classList.add(cor);
+}
+
+// ── estado ────────────────────────────────────────────────────────────────────
+let buscaAtual = null;
+
+// ── utilidades ────────────────────────────────────────────────────────────────
+function appendLog(boxId, texto, cls) {
+  const box = document.getElementById(boxId);
+  const p = document.createElement('p');
+  if (cls) p.className = cls;
+  p.textContent = texto;
+  box.appendChild(p);
+  box.scrollTop = box.scrollHeight;
+}
+
+function setProgresso(barId, valor, total) {
+  const bar = document.getElementById(barId);
+  if (valor === null) {
+    bar.classList.add('indeterminate'); bar.style.width = '';
+  } else if (valor === false) {
+    bar.classList.remove('indeterminate'); bar.style.width = '0%';
+  } else {
+    bar.classList.remove('indeterminate');
+    bar.style.width = total ? Math.round(valor / total * 100) + '%' : '100%';
+  }
+}
+
+function setBadge(id, tipo, texto) {
+  const b = document.getElementById(id);
+  b.className = 'badge' + (tipo ? ' ' + tipo : '');
+  b.innerHTML = tipo === 'run'
+    ? `<span class="pulse"></span>${texto}`
+    : texto;
+}
+
+function setBtn(id, rodando, label, cor) {
+  const btn = document.getElementById(id);
+  btn.disabled = rodando;
+  btn.innerHTML = rodando
+    ? '<span class="spinner"></span>Processando...'
+    : label;
+}
+
+function abrirSSE(sid, handlers) {
+  const es = new EventSource(`/stream/${sid}`);
+  es.onmessage = e => {
+    const msg = JSON.parse(e.data);
+    (handlers[msg.type] || handlers['_default'] || (() => {}))(msg);
+    if (msg.type === 'fim' || msg.type === 'error') es.close();
+  };
+  es.onerror = () => es.close();
+  return es;
+}
+
+async function carregarArquivos(selectId) {
+  const sel = document.getElementById(selectId);
+  const r   = await fetch('/listar-resultados');
+  const lst = await r.json();
+  sel.innerHTML = '<option value="">— selecione —</option>' +
+    lst.map(f => `<option value="${f}">${f}</option>`).join('');
+}
+
+// ── ABA BUSCA ─────────────────────────────────────────────────────────────────
+function iniciarBusca() {
+  const descritores = document.getElementById('descritores').value.trim();
+  const anoInicio   = parseInt(document.getElementById('ano-inicio').value);
+  const anoFim      = parseInt(document.getElementById('ano-fim').value);
+  const bases = [...document.querySelectorAll('.bases-grid input:checked')].map(i => i.value);
+
+  if (!descritores) { alert('Informe pelo menos um descritor.'); return; }
+  if (!bases.length) { alert('Selecione pelo menos uma base.'); return; }
+  if (anoInicio > anoFim) { alert('Ano início maior que ano fim.'); return; }
+
+  document.getElementById('log-busca').innerHTML = '';
+  document.getElementById('alerta-capes').classList.remove('vis');
+  document.getElementById('res-busca').classList.remove('vis');
+  setBadge('badge-busca', 'run', 'Buscando...');
+  setBtn('btn-buscar', true);
+  setProgresso('prog-busca', null);
+
+  fetch('/buscar', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({descritores, bases, ano_inicio: anoInicio, ano_fim: anoFim}),
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.erro) { alert(data.erro); setBtn('btn-buscar', false, '🔍 Iniciar Busca'); setProgresso('prog-busca', false); return; }
+    buscaAtual = data.id;
+    abrirSSE(data.id, {
+      'log':    m => appendLog('log-busca', m.data),
+      'etapa':  m => appendLog('log-busca', m.data, 'log-etapa'),
+      'aguardar_confirmacao': m => {
+        document.getElementById('alerta-txt').textContent = m.data;
+        document.getElementById('alerta-capes').classList.add('vis');
+        appendLog('log-busca', '⚠ ' + m.data, 'log-aviso');
+      },
+      'done': m => {
+        document.getElementById('alerta-capes').classList.remove('vis');
+        setBadge('badge-busca', 'done', 'Concluído');
+        setBtn('btn-buscar', false, '<svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="6.5" cy="6.5" r="4.5" stroke="white" stroke-width="1.7"/><path d="M10 10l3 3" stroke="white" stroke-width="1.7" stroke-linecap="round"/></svg> Iniciar Busca');
+        setProgresso('prog-busca', 1, 1);
+        document.getElementById('res-busca-total').textContent = m.total;
+        document.getElementById('res-busca-det').textContent   = `artigos únicos • ${m.duplicatas} duplicatas removidas`;
+        document.getElementById('btn-dl-busca').href = `/download/${m.data}`;
+        document.getElementById('res-busca').classList.add('vis');
+        appendLog('log-busca', `✅ Concluído! ${m.total} artigos únicos`, 'log-ok');
+        carregarHistorico();
+        ['sel-filtrar','sel-pdfs','sel-obsidian'].forEach(id => carregarArquivos(id));
+      },
+      'error': m => {
+        setBadge('badge-busca', 'error', 'Erro');
+        setBtn('btn-buscar', false, '<svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="6.5" cy="6.5" r="4.5" stroke="white" stroke-width="1.7"/><path d="M10 10l3 3" stroke="white" stroke-width="1.7" stroke-linecap="round"/></svg> Iniciar Busca');
+        setProgresso('prog-busca', false);
+        appendLog('log-busca', '❌ ERRO:\n' + m.data, 'log-erro');
+      },
+    });
+  });
+}
+
+function confirmarCapes() {
+  if (!buscaAtual) return;
+  document.getElementById('alerta-capes').classList.remove('vis');
+  fetch(`/confirmar/${buscaAtual}`, {method: 'POST'});
+}
+
+// ── ABA FILTRAR ───────────────────────────────────────────────────────────────
+function iniciarFiltrar() {
+  const arquivo = document.getElementById('sel-filtrar').value;
+  if (!arquivo) { alert('Selecione uma planilha.'); return; }
+
+  document.getElementById('log-filtrar').innerHTML = '';
+  document.getElementById('res-filtrar').classList.remove('vis');
+  document.getElementById('f-inc').textContent = '0';
+  document.getElementById('f-exc').textContent = '0';
+  document.getElementById('f-pen').textContent = '0';
+  setBadge('badge-filtrar', 'run', 'Classificando...');
+  setBtn('btn-filtrar', true);
+  setProgresso('prog-filtrar', null);
+
+  fetch('/filtrar', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({arquivo}),
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.erro) { alert(data.erro); setBtn('btn-filtrar', false, '🤖 Iniciar Classificação'); setProgresso('prog-filtrar', false); return; }
+    abrirSSE(data.id, {
+      'etapa': m => appendLog('log-filtrar', m.data, 'log-etapa'),
+      'log':   m => appendLog('log-filtrar', m.data),
+      'progresso_filtrar': m => {
+        setProgresso('prog-filtrar', m.atual, m.total);
+        const c = m.classificacao;
+        if (c === 'I') document.getElementById('f-inc').textContent = parseInt(document.getElementById('f-inc').textContent) + 1;
+        if (c === 'E') document.getElementById('f-exc').textContent = parseInt(document.getElementById('f-exc').textContent) + 1;
+        if (c === 'P') document.getElementById('f-pen').textContent = parseInt(document.getElementById('f-pen').textContent) + 1;
+      },
+      'done-filtrar': m => {
+        setBadge('badge-filtrar', 'done', 'Concluído');
+        setBtn('btn-filtrar', false, '🤖 Iniciar Classificação');
+        setProgresso('prog-filtrar', 1, 1);
+        document.getElementById('res-filtrar-det').textContent =
+          `✅ ${m.incluir} incluir · ❌ ${m.excluir} excluir · 🔶 ${m.pendente} pendente`;
+        document.getElementById('btn-dl-filtrar').href = `/download/${m.arquivo}`;
+        document.getElementById('res-filtrar').classList.add('vis');
+        appendLog('log-filtrar', `✅ Concluído: I=${m.incluir} E=${m.excluir} P=${m.pendente}`, 'log-ok');
+      },
+      'error': m => {
+        setBadge('badge-filtrar', 'error', 'Erro');
+        setBtn('btn-filtrar', false, '🤖 Iniciar Classificação');
+        setProgresso('prog-filtrar', false);
+        appendLog('log-filtrar', '❌ ERRO:\n' + m.data, 'log-erro');
+      },
+    });
+  });
+}
+
+// ── ABA PDFs ──────────────────────────────────────────────────────────────────
+function iniciarPdfs() {
+  const arquivo = document.getElementById('sel-pdfs').value;
+  if (!arquivo) { alert('Selecione uma planilha.'); return; }
+
+  document.getElementById('log-pdfs').innerHTML = '';
+  document.getElementById('res-pdfs').classList.remove('vis');
+  setBadge('badge-pdfs', 'run', 'Baixando...');
+  setBtn('btn-pdfs', true);
+  setProgresso('prog-pdfs', null);
+
+  fetch('/baixar-pdfs', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({arquivo}),
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.erro) { alert(data.erro); setBtn('btn-pdfs', false, '📥 Iniciar Downloads'); setProgresso('prog-pdfs', false); return; }
+    abrirSSE(data.id, {
+      'log':  m => appendLog('log-pdfs', m.data, m.data.startsWith('✅') ? 'log-ok' : m.data.startsWith('⚠') ? 'log-aviso' : null),
+      'done-pdfs': m => {
+        setBadge('badge-pdfs', 'done', 'Concluído');
+        setBtn('btn-pdfs', false, '📥 Iniciar Downloads');
+        setProgresso('prog-pdfs', 1, 1);
+        document.getElementById('res-pdfs-total').textContent = m.pdfs;
+        document.getElementById('res-pdfs-det').textContent   =
+          `PDFs baixados · ${m.meta_only} só metadados · ${m.sem_doi} sem DOI`;
+        document.getElementById('res-pdfs').classList.add('vis');
+        appendLog('log-pdfs', `✅ ${m.pdfs} PDFs · ${m.meta_only} metadados · ${m.sem_doi} sem DOI`, 'log-ok');
+      },
+      'error': m => {
+        setBadge('badge-pdfs', 'error', 'Erro');
+        setBtn('btn-pdfs', false, '📥 Iniciar Downloads');
+        setProgresso('prog-pdfs', false);
+        appendLog('log-pdfs', '❌ ERRO:\n' + m.data, 'log-erro');
+      },
+    });
+  });
+}
+
+// ── ABA OBSIDIAN ──────────────────────────────────────────────────────────────
+function iniciarObsidian() {
+  const arquivo = document.getElementById('sel-obsidian').value;
+  if (!arquivo) { alert('Selecione uma planilha.'); return; }
+
+  document.getElementById('log-obsidian').innerHTML = '';
+  document.getElementById('res-obsidian').classList.remove('vis');
+  setBadge('badge-obsidian', 'run', 'Exportando...');
+  setBtn('btn-obsidian', true);
+  setProgresso('prog-obsidian', null);
+
+  fetch('/exportar-obsidian', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({arquivo}),
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.erro) { alert(data.erro); setBtn('btn-obsidian', false, '🕸 Gerar Teia'); setProgresso('prog-obsidian', false); return; }
+    abrirSSE(data.id, {
+      'log':  m => appendLog('log-obsidian', m.data, m.data.startsWith('📝') ? null : m.data.startsWith('Gerando') ? 'log-etapa' : null),
+      'done-obsidian': m => {
+        setBadge('badge-obsidian', 'done', 'Concluído');
+        setBtn('btn-obsidian', false, '🕸 Gerar Teia');
+        setProgresso('prog-obsidian', 1, 1);
+        document.getElementById('res-obs-total').textContent = m.artigos;
+        document.getElementById('res-obs-det').textContent   =
+          `notas geradas · ${m.descritores} descritores · vault: ${m.vault}`;
+        document.getElementById('res-obsidian').classList.add('vis');
+        appendLog('log-obsidian', `✅ ${m.artigos} notas · ${m.descritores} descritores`, 'log-ok');
+        appendLog('log-obsidian', `📂 ${m.vault}`, 'log-ok');
+      },
+      'error': m => {
+        setBadge('badge-obsidian', 'error', 'Erro');
+        setBtn('btn-obsidian', false, '🕸 Gerar Teia');
+        setProgresso('prog-obsidian', false);
+        appendLog('log-obsidian', '❌ ERRO:\n' + m.data, 'log-erro');
+      },
+    });
+  });
+}
+
+// ── histórico ─────────────────────────────────────────────────────────────────
+function carregarHistorico() {
+  fetch('/historico').then(r => r.json()).then(hist => {
+    const sem   = document.getElementById('sem-hist');
+    const tbl   = document.getElementById('tbl-hist');
+    const tbody = document.getElementById('tbody-hist');
+    const acoes = document.getElementById('hist-acoes');
+    const chkTodos = document.getElementById('chk-sel-todos');
+    if (!hist.length) {
+      sem.style.display = ''; tbl.style.display = 'none';
+      acoes.style.display = 'none'; return;
+    }
+    sem.style.display = 'none'; tbl.style.display = ''; tbody.innerHTML = '';
+    acoes.style.display = 'flex'; chkTodos.checked = false;
+    hist.forEach(h => {
+      const badges = h.bases.map(b => {
+        const cls = {scielo:'bb-scielo',bdtd:'bb-bdtd',capes:'bb-capes'}[b] || '';
+        const nm  = {scielo:'SciELO',bdtd:'BDTD',capes:'CAPES'}[b] || b;
+        return `<span class="bbadge ${cls}">${nm}</span>`;
+      }).join('');
+      const pills = h.descritores.slice(0,4).map(d =>
+        `<span class="dpill" title="${d}">${d}</span>`
+      ).join('') + (h.descritores.length > 4 ? `<span class="dpill">+${h.descritores.length-4}</span>` : '');
+      const tr = document.createElement('tr');
+      tr.dataset.id = h.id;
+      tr.innerHTML = `
+        <td style="text-align:center"><input type="checkbox" class="chk-hist" value="${h.id}" onchange="atualizarChkTodos()"></td>
+        <td style="white-space:nowrap;color:var(--texto-sm)">${h.timestamp}</td>
+        <td>${pills}</td><td>${badges}</td>
+        <td style="white-space:nowrap">${h.ano_inicio} — ${h.ano_fim}</td>
+        <td style="text-align:center;font-weight:700">${h.total}</td>
+        <td style="text-align:center">
+          <a class="btn-dlh" href="/download/${h.arquivo}">
+            <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M5.5 1v6M3 5.5l2.5 2 2.5-2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M1 9.5h9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            Excel
+          </a>
+        </td>`;
+      tbody.appendChild(tr);
+    });
+  });
+}
+
+function toggleTodosHist(chk) {
+  document.querySelectorAll('.chk-hist').forEach(c => c.checked = chk.checked);
+}
+
+function selecionarTodosHist() {
+  const chkTodos = document.getElementById('chk-sel-todos');
+  const todos = [...document.querySelectorAll('.chk-hist')];
+  const algumDesmarcado = todos.some(c => !c.checked);
+  todos.forEach(c => c.checked = algumDesmarcado);
+  chkTodos.checked = algumDesmarcado;
+}
+
+function atualizarChkTodos() {
+  const todos = [...document.querySelectorAll('.chk-hist')];
+  document.getElementById('chk-sel-todos').checked = todos.length > 0 && todos.every(c => c.checked);
+}
+
+function apagarSelecionadosHist() {
+  const ids = [...document.querySelectorAll('.chk-hist:checked')].map(c => c.value);
+  if (!ids.length) { alert('Selecione ao menos uma busca para apagar.'); return; }
+  const msg = ids.length === document.querySelectorAll('.chk-hist').length
+    ? 'Apagar TODO o histórico de buscas?'
+    : `Apagar ${ids.length} busca(s) selecionada(s)?`;
+  if (!confirm(msg)) return;
+  const body = ids.length === document.querySelectorAll('.chk-hist').length
+    ? {todos: true}
+    : {ids};
+  fetch('/historico/apagar', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  }).then(r => r.json()).then(d => {
+    if (d.ok) carregarHistorico();
+    else alert('Erro ao apagar: ' + (d.erro || 'desconhecido'));
+  });
+}
+
+// ── init ──────────────────────────────────────────────────────────────────────
+carregarHistorico();
+['sel-filtrar','sel-pdfs','sel-obsidian'].forEach(id => carregarArquivos(id));
+</script>
+</body>
+</html>
