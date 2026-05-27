@@ -2,7 +2,7 @@
 
 ## Visão Geral
 
-O RSL Buscador é uma ferramenta desenvolvida para automatizar a coleta, filtragem e exportação de artigos científicos no contexto da Revisão Sistemática da Literatura (RSL) do TCC sobre **Vieses Algorítmicos e Racismo Estrutural**. A ferramenta substitui a busca manual repetitiva por um processo automatizado que consulta múltiplas bases, deduplica resultados, classifica artigos com IA local e exporta notas interligadas para o Obsidian.
+O RSL Buscador é uma ferramenta desenvolvida para automatizar a coleta, filtragem e exportação de artigos científicos no contexto da Revisão Sistemática da Literatura (RSL) do TCC sobre **Vieses Algorítmicos e Racismo Estrutural**. A ferramenta substitui a busca manual repetitiva por um processo automatizado que consulta múltiplas bases, deduplica resultados, classifica artigos com IA local, exporta notas interligadas para o Obsidian e gera o fluxograma PRISMA 2020 para o TCC.
 
 ---
 
@@ -17,7 +17,8 @@ RSL/
 ├── exportar_obsidian.py      # Exporta notas Markdown interligadas para o Obsidian
 ├── baixar_pdfs.py            # Baixa PDFs via Unpaywall; fallback em Markdown
 ├── templates/
-│   └── index.html            # Interface web (HTML + CSS + JS vanilla)
+│   ├── index.html            # Interface web principal (HTML + CSS + JS vanilla)
+│   └── prisma.html           # Página do fluxograma PRISMA 2020
 ├── resultados/               # Planilhas Excel geradas
 ├── capes_exports/            # Arquivos RIS baixados do CAPES
 ├── historico.json            # Registro das buscas anteriores
@@ -30,6 +31,7 @@ RSL/
 2. **Filtrar** — classifica cada artigo com llama3 (I/E/P) usando critérios do TCC → gera `*_filtrado_*.xlsx`
 3. **Baixar PDFs** — tenta baixar PDFs via Unpaywall; salva metadados em Markdown quando indisponível
 4. **Exportar Obsidian** — cria notas interligadas por descritor no vault `~/Meu cofre/RSL/`
+5. **PRISMA 2020** — gera fluxograma interativo com os números reais da RSL, exportável como PNG
 
 Cada operação roda em **thread daemon** separada; logs chegam ao navegador em tempo real via **SSE**.
 
@@ -50,6 +52,7 @@ Cada operação roda em **thread daemon** separada; logs chegam ao navegador em 
 | Unpaywall API | v2 | Localização de PDFs em acesso aberto |
 | Chromium (Snap) | 147 | Navegador usado pelo Selenium |
 | Server-Sent Events (SSE) | — | Streaming de logs em tempo real |
+| SVG + Canvas API | — | Geração e exportação do fluxograma PRISMA |
 
 ---
 
@@ -62,6 +65,8 @@ Cada operação roda em **thread daemon** separada; logs chegam ao navegador em 
 | `/filtrar` | POST | Classifica artigos com Ollama/llama3 |
 | `/baixar-pdfs` | POST | Baixa PDFs via Unpaywall |
 | `/exportar-obsidian` | POST | Exporta notas para o vault Obsidian |
+| `/prisma` | GET | Abre a página do fluxograma PRISMA 2020 |
+| `/prisma/dados` | POST | Extrai e retorna os números PRISMA da planilha selecionada |
 | `/stream/<sid>` | GET | SSE — transmite logs da sessão em tempo real |
 | `/confirmar/<sid>` | POST | Desbloqueia thread aguardando ação manual (CAPES) |
 | `/listar-resultados` | GET | Lista planilhas Excel em `resultados/` |
@@ -82,6 +87,8 @@ Cada operação roda em **thread daemon** separada; logs chegam ao navegador em 
 - **Estratégia:** API REST VuFind consultada diretamente com `requests`.
 - **Endpoint:** `https://bdtd.ibict.br/vufind/api/v1/search`
 - **Paginação:** Controlada por `page` e `limit`, limite de 5 páginas por descritor.
+- **Campo de data:** A API retorna `publicationDates` (array), não `year`. O campo é solicitado explicitamente via `field[]` nos parâmetros.
+- **Links:** A API retorna o campo `urls` (array de objetos com chave `url`); quando presente, esse URL é usado diretamente. Caso contrário, o link é construído como `https://bdtd.ibict.br/vufind/Record/{id}`.
 
 ### Periódicos CAPES
 - **Estratégia:** `undetected_chromedriver` com navegador visível (não headless).
@@ -206,17 +213,20 @@ Classifica cada artigo da planilha usando o modelo **llama3** rodando localmente
 
 **Saída por artigo:**
 - O llama3 retorna JSON: `{"status": "I", "criterio": "I3, I4", "justificativa": "..."}`
-- A extração usa regex `\{[^{}]+\}` para tolerar texto adicional em volta do JSON
-- Coluna **Status (I/E/P)** recebe `I`, `E` ou `P`
-- Coluna **Motivo Exclusão** recebe `[I3, I4] Trata de discriminação racial em sistemas de crédito`
-- Em caso de falha no Ollama, o artigo é marcado como `P` (pendente)
+- A extração usa regex `\{[^{}]+\}` para tolerar texto adicional em volta do JSON; `json.loads` envolto em `try/except JSONDecodeError`
+- **Fallback (resposta sem JSON válido):** varre o texto da resposta procurando o primeiro caractere `I`, `E` ou `P` para determinar o status; gera justificativa padrão por status ("Incluído pela análise automática — revisar critérios manualmente", "Excluído…", "Pendente — requer leitura completa para decisão")
+- Em caso de exceção na chamada ao Ollama, o artigo é marcado como `P` com justificativa "Erro na análise automática — revisar manualmente"
+- Coluna **Status (I/E/P)** em "Todos os Resultados" recebe `I`, `E` ou `P`
+- Coluna **Motivo Exclusão** em "Todos os Resultados" recebe `[I3, I4] Trata de discriminação racial em sistemas de crédito`
 
-**Preenchimento da Tabela 2 - Pós Filtragem:**
-Após classificar todos os artigos, a aba "Tabela 2 - Pós Filtragem" é limpa e reescrita com **todos os artigos classificados** — uma linha por artigo, com as colunas:
+**Preenchimento da aba "Pós Filtragem":**
+Após classificar todos os artigos, a aba "Pós Filtragem" é limpa e reescrita com **todos os artigos classificados** — uma linha por artigo, com as colunas:
 
 `Base | Descritor | Título | Autores | Ano | DOI | Status (I/E/P) | Critério | Motivo Exclusão`
 
-O campo **Critério** traz o código aplicado (ex: `I3, I4`) e **Motivo Exclusão** traz a justificativa em linguagem natural gerada pelo llama3. Use os filtros automáticos da aba para isolar incluídos, excluídos ou pendentes.
+O campo **Critério** traz o código aplicado (ex: `I3, I4`) e **Motivo Exclusão** traz apenas a justificativa em linguagem natural gerada pelo llama3 (sem o prefixo `[código]`). Em "Todos os Resultados" o campo "Motivo Exclusão" continua recebendo o formato `[I3, I4] justificativa`. Use os filtros automáticos da aba para isolar incluídos, excluídos ou pendentes.
+
+> **Nota de implementação:** os dados de cada artigo (base, descritor, título, autores, ano, DOI, status, critério, justificativa) são coletados durante a iteração de classificação e gravados na aba "Pós Filtragem" a partir dessa coleção — sem re-leitura das células já modificadas em "Todos os Resultados".
 
 **Sobre o status P (Pendente):**
 O llama3 atribui `P` quando não tem confiança suficiente para incluir ou excluir o artigo apenas com título e resumo. Ocorre em três situações:
@@ -227,7 +237,7 @@ O llama3 atribui `P` quando não tem confiança suficiente para incluir ou exclu
 | Resumo ausente ou muito curto | Informação insuficiente para decidir |
 | Conteúdo ambíguo | Trata de IA em saúde mas não menciona raça explicitamente |
 
-Os artigos `P` formam a **fila de leitura manual**: abra o texto completo e decida inclusão ou exclusão — é o que o critério I5 prevê. Na planilha, filtre a coluna `Status (I/E/P)` por `P` para trabalhar esses casos.
+Os artigos `P` formam a **fila de leitura manual**: abra o texto completo e decida inclusão ou exclusão. Na planilha, filtre a coluna `Status (I/E/P)` por `P` para trabalhar esses casos.
 
 **Arquivo de saída:** `{nome_original}_filtrado_YYYYMMDD_HHMM.xlsx` (sem duplo sufixo se já era filtrado).
 
@@ -239,27 +249,86 @@ ollama pull llama3    # uma única vez
 
 ---
 
+### `/prisma` — Fluxograma PRISMA 2020
+
+Página standalone (`templates/prisma.html`) que gera o fluxograma PRISMA 2020 a partir dos dados da planilha Excel selecionada. Acessível pelo botão **📊 PRISMA 2020** na barra de navegação da interface principal.
+
+**Fases do fluxograma:**
+
+| Fase | Cor | Dados exibidos |
+|---|---|---|
+| Identificação | Azul | Registros brutos por base (SciELO / BDTD / CAPES) + duplicatas removidas |
+| Triagem | Ciano | Registros após deduplicação (total único) |
+| Elegibilidade | Âmbar | Registros avaliados pela IA + excluídos (breakdown E1–E7) |
+| Inclusão | Verde | Incluídos (Status=I) + Pendentes (Status=P) |
+
+**Fontes de dados (função `_extrair_dados_prisma`):**
+
+| Dado | Fonte na planilha |
+|---|---|
+| Bruto por base (SciELO/BDTD/CAPES) | Bloco "Termos Booleanos" no final da aba "Todos os Resultados" |
+| Total único (após dedup) | Contagem de linhas com Base válida em "Todos os Resultados" |
+| Duplicatas removidas | `total_bruto − total_único` (calculado; nunca negativo) |
+| Status I/E/P | Coluna "Status (I/E/P)" em "Todos os Resultados" |
+| Critérios de exclusão (E1–E7) | Coluna "Motivo Exclusão" em "Todos os Resultados" (regex `\b[EI]\d\b`) |
+
+> **Importante:** As abas individuais "SciELO", "BDTD" e "Periódicos CAPES" contêm os registros **únicos** de cada base — não os brutos. Os brutos por base ficam no bloco de resumo no final de "Todos os Resultados". A aba "Duplicatas" contém os registros removidos na deduplicação (pode superar o total bruto se muitos descritores retornam os mesmos artigos), portanto **não** é usada para calcular o número de duplicatas no PRISMA.
+
+**Fórmulas aplicadas:**
+```
+Total bruto   = SciELO_bruto + BDTD_bruto + CAPES_bruto
+Duplicatas    = max(0, total_bruto − total_único)
+Após dedup    = total_único
+```
+
+**Validações automáticas** — exibidas antes do fluxograma se alguma falhar:
+- Duplicatas ≥ 0 e ≤ Total bruto
+- Registros após deduplicação ≥ 0
+- `total_bruto − duplicatas = total_único`
+- `I + E + P ≤ total_único` (quando filtragem já foi executada)
+
+**Tabela "Resumo por Fase"** — exibida abaixo do fluxograma com coluna **Validação** (✅/❌/—):
+
+| Fase | Etapa | Registros | Validação |
+|---|---|---|---|
+| Identificação | SciELO/BDTD/CAPES (brutos) | n | ✅ |
+| Identificação | Total bruto | n | ✅ |
+| Identificação | Duplicatas removidas | n | ✅ |
+| Triagem | Após deduplicação | n | ✅ |
+| Triagem | Consistência: bruto − dup = único | n | ✅ |
+| Elegibilidade | Avaliados pela IA | n | ✅/— |
+| Elegibilidade | Excluídos (E) | n | ✅/— |
+| Inclusão | Incluídos (I) | n | ✅/— |
+| Inclusão | Pendentes (P) | n | ✅/— |
+| Inclusão | Consistência: I+E+P ≤ único | n | ✅/— |
+
+**Exportação PNG:** botão "Exportar PNG" serializa o SVG com `XMLSerializer`, renderiza em `<canvas>` em escala 2× (retina) e dispara download como `PRISMA_2020_RSL.png`.
+
+**Fallback:** Se o bloco de resumo não for encontrado na planilha (planilha antiga sem o bloco), o total bruto é estimado como `total_único + linhas na aba Duplicatas`, com aviso âmbar na interface.
+
+---
+
 ## Estrutura da Planilha Excel
 
 Gerada por `buscador_rsl.py` via `openpyxl`. Contém 8 abas:
 
 | Aba | Gerada por | Conteúdo |
 |---|---|---|
-| Tabela 2 - Pós Filtragem | `/filtrar` | Lista de artigos classificados com Status, Critério e Motivo |
-| Todos os Resultados | Busca | Todos os registros únicos + bloco de resumo por descritor/base no final |
-| SciELO | Busca | Registros filtrados por base |
-| BDTD | Busca | Registros filtrados por base |
-| Periódicos CAPES | Busca | Registros filtrados por base |
-| Duplicatas | Busca | Registros removidos na deduplicação |
+| Todos os Resultados | Busca | Registros únicos após deduplicação + bloco "Resumo — Busca Inicial por Descritor" no final |
+| Pós Filtragem | `/filtrar` | Artigos classificados com Status, Critério e Motivo (uma linha por artigo) |
+| SciELO | Busca | Registros únicos da SciELO |
+| BDTD | Busca | Registros únicos da BDTD |
+| Periódicos CAPES | Busca | Registros únicos do CAPES |
+| Duplicatas | Busca | Todos os registros removidos na deduplicação |
 | Quadro 1 - Estudos Finais | Busca | Template para codificação final (E1, E2…) |
 | Critérios I-E | Busca | Definição dos critérios I1–I6 e E1–E7 |
 
-> **Nota de design:** a antiga aba "Tabela 1 - Busca Inicial" (matriz de contagem) foi incorporada ao final da aba "Todos os Resultados" como bloco "Resumo — Busca Inicial por Descritor", eliminando a redundância de abas separadas.
+> **Nota de design:** a antiga "Tabela 1 - Busca Inicial" (matriz de contagem) foi incorporada ao final de "Todos os Resultados" como bloco "Resumo — Busca Inicial por Descritor". A antiga "Tabela 2 - Pós Filtragem" foi renomeada para "Pós Filtragem" e reposicionada após "Todos os Resultados".
 
 **Colunas de "Todos os Resultados":**
 `Base | Descritor | Título | Autores | Ano | Revista/Repositório | Tipo | Resumo | DOI | Link | Status (I/E/P) | Motivo Exclusão`
 
-**Colunas de "Tabela 2 - Pós Filtragem":**
+**Colunas de "Pós Filtragem":**
 `Base | Descritor | Título | Autores | Ano | DOI | Status (I/E/P) | Critério | Motivo Exclusão`
 
 ---
@@ -364,6 +433,27 @@ sudo systemctl disable ollama   # evita que o serviço de sistema suba com GPU
 
 ---
 
+### 9. Fluxograma PRISMA com números impossíveis (duplicatas > total bruto)
+
+**Problema:** O fluxograma exibia "Duplicatas removidas: 924" com "Total bruto: 426", resultando em "Registros após deduplicação: −498".
+
+**Causa raiz:** A aba "Duplicatas" armazena **todos os registros que foram descartados na deduplicação**, incluindo artigos que apareceram com o mesmo título para múltiplos descritores (fenômeno comum quando 14 descritores consultam as mesmas bases). Com 1350 registros brutos retornados pelas APIs e 426 únicos, a aba "Duplicatas" tem 924 linhas — um número válido, mas que **não** representa "duplicatas entre bases". As abas "SciELO", "BDTD" e "CAPES" também não têm os brutos: elas contêm os registros únicos filtrados por base.
+
+**Solução:**
+- **Bruto por base**: lido do bloco "Termos Booleanos" no final de "Todos os Resultados" (gerado por `_adicionar_resumo_busca`), que armazena as contagens reais de cada busca por descritor
+- **Total único**: contagem de linhas com campo `Base` válido em "Todos os Resultados" (ignorando linhas do bloco de resumo)
+- **Duplicatas calculadas**: `max(0, total_bruto − total_único)` — nunca negativo, independente do número de linhas da aba "Duplicatas"
+
+**Fórmula correta:**
+```
+Total bruto   = soma dos brutos por descritor (do bloco de resumo)
+Total único   = linhas de artigos em "Todos os Resultados"
+Duplicatas    = Total bruto − Total único   (sempre ≥ 0)
+Após dedup    = Total único
+```
+
+---
+
 ## Como Executar
 
 ### Pré-requisitos
@@ -414,4 +504,4 @@ python3 app.py
 
 ---
 
-*Última atualização: 2026-05-18 — reestruturação da planilha Excel: Tabela 2 passa a conter artigos classificados (Status/Critério/Motivo); resumo de contagem incorporado ao final de "Todos os Resultados".*
+*Última atualização: 2026-05-26 — melhorias na busca BDTD (campos `field[]` explícitos, extração de link via campo `urls`); fallback aprimorado no `/filtrar` (try/except no JSON, scan por I/E/P, justificativas padrão por status); separação de "Motivo Exclusão" em "Todos os Resultados" (`[código] justificativa`) vs "Pós Filtragem" (só justificativa); coleta de dados na iteração de classificação sem re-leitura de células.*

@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PRISMA 2020 — RSL Buscador</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --azul:      #1e3a5f;  --azul-md:  #2563eb;  --azul-lt:  #dbeafe;
+      --verde:     #16a34a;  --verde-lt: #dcfce7;
+      --amber:     #d97706;  --amber-lt: #fef3c7;
+      --cinza-bg:  #f1f5f9;  --cinza-brd:#e2e8f0;
+      --branco:    #ffffff;  --texto:    #1e293b;   --texto-sm: #64748b;
+    }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--cinza-bg); color: var(--texto); min-height: 100vh; }
+
+    header {
+      background: var(--azul); color: #fff;
+      padding: .85rem 2rem; display: flex; align-items: center; gap: 1rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,.25);
+    }
+    .back-btn {
+      display: flex; align-items: center; gap: .4rem;
+      color: #93c5fd; font-size: .84rem; text-decoration: none;
+      padding: .35rem .75rem; border-radius: 6px; border: 1px solid rgba(148,197,253,.3);
+      transition: background .15s;
+    }
+    .back-btn:hover { background: rgba(148,197,253,.15); color: #fff; }
+    header h1 { font-size: 1.15rem; font-weight: 700; }
+    header p  { font-size: .76rem; color: #93c5fd; margin-top: 2px; }
+
+    .pg { max-width: 1060px; margin: 1.5rem auto; padding: 0 1.25rem; }
+
+    .card {
+      background: var(--branco); border: 1px solid var(--cinza-brd);
+      border-radius: 12px; padding: 1.5rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 1.25rem;
+    }
+    .card-title {
+      font-size: .72rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .8px; color: var(--texto-sm); margin-bottom: 1rem;
+    }
+
+    .ctrl-row { display: flex; gap: .75rem; align-items: flex-end; flex-wrap: wrap; }
+    .fg { flex: 1; min-width: 220px; }
+    label { display: block; font-size: .82rem; font-weight: 600; margin-bottom: .35rem; }
+    .file-picker { display: flex; gap: .6rem; align-items: center; }
+    .file-picker select {
+      flex: 1; border: 1px solid var(--cinza-brd); border-radius: 8px;
+      padding: .6rem .8rem; font-size: .84rem; font-family: inherit;
+      color: var(--texto); background: #fafafa;
+    }
+    .file-picker select:focus { outline: none; border-color: var(--azul-md); }
+    .file-picker button {
+      padding: .6rem .9rem; background: var(--cinza-bg);
+      border: 1px solid var(--cinza-brd); border-radius: 8px; cursor: pointer; font-size: .8rem;
+    }
+    .file-picker button:hover { background: #e2e8f0; }
+
+    .btn {
+      display: inline-flex; align-items: center; gap: .45rem;
+      padding: .7rem 1.4rem; font-size: .87rem; font-weight: 700;
+      border: none; border-radius: 8px; cursor: pointer;
+      transition: background .15s, transform .1s;
+    }
+    .btn:active { transform: scale(.98); }
+    .btn:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+    .btn-azul  { background: var(--azul-md); color: #fff; }
+    .btn-azul:hover:not(:disabled)  { background: #1d4ed8; }
+    .btn-verde { background: var(--verde); color: #fff; }
+    .btn-verde:hover:not(:disabled) { background: #15803d; }
+
+    .erro-box {
+      display: none; background: #fee2e2; border: 1px solid #fca5a5;
+      border-radius: 8px; padding: .8rem 1rem; color: #991b1b;
+      font-size: .83rem; margin-top: .75rem; white-space: pre-wrap;
+    }
+
+    .svg-wrap { overflow-x: auto; }
+    .svg-wrap svg { display: block; margin: 0 auto; max-width: 100%; }
+
+    #placeholder {
+      text-align: center; padding: 4rem 2rem;
+      color: var(--texto-sm); font-size: .9rem;
+    }
+    #placeholder svg { display: block; margin: 0 auto 1rem; opacity: .25; }
+
+    .export-row {
+      display: flex; gap: .6rem; justify-content: flex-end;
+      margin-bottom: .85rem;
+    }
+
+    /* stats table */
+    .stats-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+    .stats-table th, .stats-table td {
+      padding: .55rem 1rem; border-bottom: 1px solid var(--cinza-brd); text-align: left;
+    }
+    .stats-table th {
+      font-weight: 700; color: var(--texto-sm); font-size: .7rem;
+      text-transform: uppercase; background: var(--cinza-bg);
+    }
+    .stats-table tr:last-child td { border-bottom: none; }
+    .stats-table td.num { font-weight: 700; text-align: right; min-width: 60px; }
+    .stats-table td.val { text-align: center; min-width: 40px; }
+    .pb {
+      display: inline-block; padding: .15rem .55rem; border-radius: 99px;
+      font-size: .7rem; font-weight: 700;
+    }
+    .pb-id   { background: #dbeafe; color: #1d4ed8; }
+    .pb-tri  { background: #e0f2fe; color: #0369a1; }
+    .pb-eleg { background: #fef3c7; color: #b45309; }
+    .pb-inc  { background: #dcfce7; color: #15803d; }
+    tr.row-err td { background: #fff7f7; }
+
+    .info-box {
+      background: var(--azul-lt); border: 1px solid #93c5fd;
+      border-radius: 8px; padding: .75rem 1rem;
+      font-size: .82rem; color: #1e3a5f; margin-top: .75rem; display: none;
+    }
+    .warn-box {
+      background: var(--amber-lt); border: 1px solid #f59e0b;
+      border-radius: 8px; padding: .75rem 1rem;
+      font-size: .82rem; color: #78350f; margin-top: .75rem; display: none;
+    }
+    .val-box {
+      background: #fee2e2; border: 1px solid #fca5a5;
+      border-radius: 8px; padding: .75rem 1rem;
+      font-size: .82rem; color: #991b1b; margin-top: .75rem; display: none;
+    }
+    .val-box ul { margin: .4rem 0 0 1.2rem; }
+    .val-box li { margin-bottom: .2rem; }
+  </style>
+</head>
+<body>
+
+<header>
+  <a class="back-btn" href="/">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <path d="M9 11L5 7l4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    Voltar
+  </a>
+  <svg width="30" height="30" viewBox="0 0 30 30" fill="none">
+    <rect width="30" height="30" rx="7" fill="#2563eb"/>
+    <rect x="7" y="9" width="11" height="2" rx="1" fill="white"/>
+    <rect x="7" y="14" width="8" height="2" rx="1" fill="white"/>
+    <rect x="7" y="19" width="9" height="2" rx="1" fill="white"/>
+    <circle cx="22" cy="19" r="5" fill="#60a5fa"/>
+    <path d="M19.5 19l1.8 1.8 2.7-3" stroke="white" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+  <div>
+    <h1>Fluxograma PRISMA 2020</h1>
+    <p>Revisão Sistemática da Literatura — Vieses Algorítmicos e Racismo Estrutural</p>
+  </div>
+</header>
+
+<div class="pg">
+
+  <!-- Controles -->
+  <div class="card">
+    <div class="card-title">Gerar Fluxograma</div>
+    <div class="ctrl-row">
+      <div class="fg">
+        <label>Planilha Excel</label>
+        <div class="file-picker">
+          <select id="sel-prisma"><option value="">— selecione —</option></select>
+          <button onclick="carregarArquivos()" title="Recarregar lista">↻</button>
+        </div>
+      </div>
+      <button class="btn btn-azul" id="btn-gerar" onclick="gerarPrisma()">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <rect x="1" y="1" width="12" height="12" rx="2.5" stroke="white" stroke-width="1.6"/>
+          <path d="M7 4v6M4 7h6" stroke="white" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+        Gerar Fluxograma
+      </button>
+    </div>
+    <div class="info-box" id="info-nofiltro">
+      <strong>Filtragem ainda não realizada.</strong>
+      As fases de Elegibilidade e Inclusão ficarão em branco.
+      Execute "Filtrar com IA" na tela principal e depois gere o fluxograma novamente.
+    </div>
+    <div class="warn-box" id="warn-box"></div>
+    <div class="val-box"  id="val-box"></div>
+    <div class="erro-box" id="erro-box"></div>
+  </div>
+
+  <!-- Fluxograma -->
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+      <div class="card-title" style="margin:0">Fluxograma PRISMA 2020</div>
+      <div class="export-row" style="margin:0">
+        <button class="btn btn-verde" id="btn-png" onclick="exportarPNG()" disabled>
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+            <path d="M6.5 1v7.5M3.5 6l3 2.5 3-2.5" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M1.5 11h10" stroke="white" stroke-width="1.6" stroke-linecap="round"/>
+          </svg>
+          Exportar PNG
+        </button>
+      </div>
+    </div>
+    <div class="svg-wrap" id="svg-wrap">
+      <div id="placeholder">
+        <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+          <rect x="8" y="8" width="48" height="12" rx="3" fill="#cbd5e1"/>
+          <rect x="8" y="26" width="48" height="12" rx="3" fill="#cbd5e1"/>
+          <rect x="8" y="44" width="48" height="12" rx="3" fill="#cbd5e1"/>
+        </svg>
+        Selecione uma planilha e clique em "Gerar Fluxograma"
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabela de resumo -->
+  <div class="card" id="stats-card" style="display:none">
+    <div class="card-title">Resumo por Fase — PRISMA 2020</div>
+    <table class="stats-table">
+      <thead>
+        <tr>
+          <th>Fase</th>
+          <th>Etapa</th>
+          <th style="text-align:right">Registros</th>
+          <th style="text-align:center">Validação</th>
+        </tr>
+      </thead>
+      <tbody id="stats-tbody"></tbody>
+    </table>
+    <p style="font-size:.75rem;color:var(--texto-sm);margin-top:.75rem">
+      ✅ valor correto &nbsp;|&nbsp; ❌ inconsistência detectada &nbsp;|&nbsp; — não aplicável (filtragem pendente)
+    </p>
+  </div>
+
+</div><!-- /pg -->
+
+<script>
+// ── carrega lista de planilhas ────────────────────────────────────────────────
+async function carregarArquivos() {
+  const sel = document.getElementById('sel-prisma');
+  try {
+    const r   = await fetch('/listar-resultados');
+    const lst = await r.json();
+    sel.innerHTML = '<option value="">— selecione —</option>' +
+      lst.map(f => `<option value="${f}">${f}</option>`).join('');
+  } catch(e) {
+    console.error('Erro ao carregar arquivos:', e);
+  }
+}
+
+// ── gera fluxograma ────────────────────────────────────────────────────────────
+async function gerarPrisma() {
+  const arquivo = document.getElementById('sel-prisma').value;
+  if (!arquivo) { alert('Selecione uma planilha.'); return; }
+
+  const btn = document.getElementById('btn-gerar');
+  btn.disabled = true;
+  btn.innerHTML = '<span style="display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite"></span> Carregando...';
+
+  document.getElementById('erro-box').style.display     = 'none';
+  document.getElementById('warn-box').style.display     = 'none';
+  document.getElementById('val-box').style.display      = 'none';
+  document.getElementById('info-nofiltro').style.display = 'none';
+
+  try {
+    const resp = await fetch('/prisma/dados', {
+      method:  'POST',
+      headers: {'Content-Type': 'application/json'},
+      body:    JSON.stringify({arquivo}),
+    });
+    const dados = await resp.json();
+    if (dados.erro) throw new Error(dados.erro);
+
+    // avisos do backend
+    if (dados.avisos && dados.avisos.length > 0) {
+      const wb = document.getElementById('warn-box');
+      wb.innerHTML = '<strong>Aviso:</strong> ' + dados.avisos.join('<br>');
+      wb.style.display = 'block';
+    }
+
+    // erros de validação
+    const errosVal = validarDados(dados);
+    if (errosVal.length > 0) {
+      const vb = document.getElementById('val-box');
+      vb.innerHTML = '<strong>Inconsistências detectadas:</strong><ul>' +
+        errosVal.map(e => `<li>${e}</li>`).join('') + '</ul>';
+      vb.style.display = 'block';
+    }
+
+    renderFluxograma(dados);
+    renderTabela(dados);
+    document.getElementById('btn-png').disabled = false;
+    document.getElementById('stats-card').style.display = '';
+
+    if (!dados.filtrado) {
+      document.getElementById('info-nofiltro').style.display = 'block';
+    }
+  } catch (e) {
+    const eb = document.getElementById('erro-box');
+    eb.textContent = 'Erro: ' + e.message;
+    eb.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <rect x="1" y="1" width="12" height="12" rx="2.5" stroke="white" stroke-width="1.6"/>
+      <path d="M7 4v6M4 7h6" stroke="white" stroke-width="1.6" stroke-linecap="round"/>
+    </svg> Gerar Fluxograma`;
+  }
+}
+
+// ── renderiza SVG ─────────────────────────────────────────────────────────────
+function renderFluxograma(dados) {
+  const wrap = document.getElementById('svg-wrap');
+  document.getElementById('placeholder').style.display = 'none';
+  wrap.innerHTML = gerarSVG(dados);
+}
+
+// ── validação dos dados ───────────────────────────────────────────────────────
+function validarDados(dados) {
+  const { identificacao: id, triagem: tri, elegibilidade: eleg, inclusao: inc } = dados;
+  const erros = [];
+
+  if (id.total <= 0)
+    erros.push(`Total bruto = ${id.total} (deve ser > 0)`);
+
+  if (id.duplicatas < 0)
+    erros.push(`Duplicatas removidas = ${id.duplicatas} (não pode ser negativo)`);
+
+  if (id.duplicatas > id.total)
+    erros.push(`Duplicatas (${id.duplicatas}) > Total bruto (${id.total}) — impossível`);
+
+  if (tri.apos_dedup < 0)
+    erros.push(`Registros após deduplicação = ${tri.apos_dedup} (não pode ser negativo)`);
+
+  const calc = id.total - id.duplicatas;
+  if (calc !== id.unicos)
+    erros.push(`Total bruto (${id.total}) − Duplicatas (${id.duplicatas}) = ${calc}, mas únicos = ${id.unicos}`);
+
+  if (dados.filtrado) {
+    const ief = inc.incluidos + eleg.excluidos + inc.pendentes;
+    if (ief > id.unicos)
+      erros.push(`I+E+P = ${ief} > Total único = ${id.unicos} (impossível)`);
+  }
+
+  return erros;
+}
+
+// ── renderiza tabela de resumo ────────────────────────────────────────────────
+function renderTabela(dados) {
+  const { identificacao: id, triagem: tri, elegibilidade: eleg, inclusao: inc } = dados;
+  const v   = dados.validacoes || {};
+  const fil = dados.filtrado;
+
+  // [cls, fase, etapa, valor, validKey_ou_null, customCheck_fn]
+  // validKey: chave em validacoes (true=✅, false=❌, null=—)
+  // customCheck: se fornecida, sobrescreve validKey
+  const ief = inc.incluidos + eleg.excluidos + inc.pendentes;
+
+  const linhas = [
+    ['pb-id',   'Identificação',  'SciELO — resultados brutos',                    id.scielo,      null,                 id.scielo >= 0],
+    ['pb-id',   'Identificação',  'BDTD — resultados brutos',                      id.bdtd,        null,                 id.bdtd >= 0],
+    ['pb-id',   'Identificação',  'Periódicos CAPES — resultados brutos',           id.capes,       null,                 id.capes >= 0],
+    ['pb-id',   'Identificação',  'Total bruto (SciELO + BDTD + CAPES)',            id.total,       'bruto_positivo',     null],
+    ['pb-id',   'Identificação',  'Duplicatas removidas (bruto − único)',           id.duplicatas,  'dup_valida',         null],
+    ['pb-tri',  'Triagem',        'Registros após deduplicação (total único)',       tri.apos_dedup, 'dedup_positivo',     null],
+    ['pb-tri',  'Triagem',        'Consistência: bruto − dup = único',              id.unicos,      'total_consistente',  null],
+    ['pb-eleg', 'Elegibilidade',  'Registros avaliados pela IA',                   eleg.avaliados, null,                 fil ? eleg.avaliados >= 0 : null],
+    ['pb-eleg', 'Elegibilidade',  'Excluídos por critério (Status = E)',            eleg.excluidos, null,                 fil ? eleg.excluidos >= 0 : null],
+    ['pb-inc',  'Inclusão',       'Incluídos na síntese (Status = I)',              inc.incluidos,  null,                 fil ? inc.incluidos >= 0  : null],
+    ['pb-inc',  'Inclusão',       'Pendentes — revisão manual (Status = P)',        inc.pendentes,  null,                 fil ? inc.pendentes >= 0  : null],
+    ['pb-inc',  'Inclusão',       'Consistência: I + E + P ≤ total único',          ief,            'ief_consistente',    null],
+  ];
+
+  document.getElementById('stats-tbody').innerHTML = linhas.map(
+    ([cls, fase, etapa, valor, validKey, customOk]) => {
+      let ok = null;
+      if (validKey !== null) {
+        ok = v[validKey];            // true / false / null (undefined → null)
+        if (ok === undefined) ok = null;
+      } else if (customOk !== null) {
+        ok = customOk;
+      }
+
+      const badge = ok === true  ? '✅'
+                  : ok === false ? '❌'
+                  :                '—';
+      const rowCls = ok === false ? ' class="row-err"' : '';
+      const numStr = (typeof valor === 'number' && valor < 0)
+                   ? `<span style="color:#dc2626">${valor}</span>`
+                   : valor;
+
+      return `<tr${rowCls}>
+        <td><span class="pb ${cls}">${fase}</span></td>
+        <td>${etapa}</td>
+        <td class="num">${numStr}</td>
+        <td class="val">${badge}</td>
+      </tr>`;
+    }
+  ).join('');
+}
+
+// ── geração do SVG ────────────────────────────────────────────────────────────
+function gerarSVG(dados) {
+  const { identificacao: id, triagem: tri, elegibilidade: eleg, inclusao: inc, motivos, filtrado } = dados;
+
+  // ── layout ─────────────────────────────────────────────────────────────────
+  const W   = 870;    // SVG total width
+  const mx  = 15;     // main box left x
+  const mw  = 340;    // main box width
+  const mc  = mx + mw / 2;  // main box center x
+  const sx  = mx + mw + 55; // side box left x
+  const sw  = W - sx - 15;  // side box width
+  const R   = 8;      // border radius
+
+  // ── palette ────────────────────────────────────────────────────────────────
+  const C = {
+    id:   { bg: '#dbeafe', bd: '#3b82f6', hd: '#1d4ed8' },
+    tri:  { bg: '#e0f2fe', bd: '#0ea5e9', hd: '#0369a1' },
+    eleg: { bg: '#fef3c7', bd: '#f59e0b', hd: '#d97706' },
+    inc:  { bg: '#dcfce7', bd: '#22c55e', hd: '#16a34a' },
+    side: { bg: '#f8fafc', bd: '#94a3b8' },
+  };
+
+  // ── helpers ────────────────────────────────────────────────────────────────
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function box(x, y, w, h, fill, stroke, sw2 = 1.5) {
+    return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${R}" fill="${fill}" stroke="${stroke}" stroke-width="${sw2}"/>`;
+  }
+
+  // Rounded-top-only path (header bar)
+  function hdrPath(x, y, w, h, fill) {
+    return `<path d="M${x+R},${y} H${x+w-R} A${R},${R} 0 0 1 ${x+w},${y+R} V${y+h} H${x} V${y+R} A${R},${R} 0 0 1 ${x+R},${y} Z" fill="${fill}"/>`;
+  }
+
+  function txt(x, y, s, opts = {}) {
+    const fs     = opts.fs     || 11;
+    const fill   = opts.fill   || '#1e293b';
+    const fw     = opts.fw     || 'normal';
+    const anchor = opts.anchor || 'middle';
+    return `<text x="${x}" y="${y}" text-anchor="${anchor}" font-size="${fs}" font-weight="${fw}" fill="${fill}" font-family="Segoe UI,system-ui,sans-serif">${esc(s)}</text>`;
+  }
+
+  function arrowDown(x, y1, y2) {
+    return `<line x1="${x}" y1="${y1}" x2="${x}" y2="${y2-6}" stroke="#64748b" stroke-width="1.8" marker-end="url(#ah)"/>`;
+  }
+
+  function arrowRight(x1, x2, y) {
+    return `<line x1="${x1+4}" y1="${y}" x2="${x2-6}" y2="${y}" stroke="#64748b" stroke-width="1.8" marker-end="url(#ah)"/>`;
+  }
+
+  // Main phase box with colored header
+  function phaseBox(x, y, w, h, palette, label, lines) {
+    const hH = 26;
+    let o = '';
+    o += box(x, y, w, h, palette.bg, palette.bd);
+    o += hdrPath(x, y, w, hH, palette.hd);
+    o += txt(x + w/2, y + 17, label, {fs: 11.5, fill: '#fff', fw: '700'});
+    let ly = y + hH + 16;
+    for (const line of lines) {
+      o += txt(x + w/2, ly, line, {fs: 11, fill: '#1e293b'});
+      ly += 20;
+    }
+    return o;
+  }
+
+  // Side exclusion box — returns {svg, h}
+  function sideBox(x, y, w, lines) {
+    const lineH = 17, padV = 13;
+    const h = padV * 2 + lines.length * lineH - (lineH - 14); // ~= 2*padV + lines*lineH
+    let o = box(x, y, w, h, C.side.bg, C.side.bd);
+    let ly = y + padV + 2;
+    for (const [i, line] of lines.entries()) {
+      o += txt(x + w/2, ly, line, {fs: 10.5, fill: '#334155', fw: i === 0 ? '600' : 'normal'});
+      ly += lineH;
+    }
+    return { svg: o, h };
+  }
+
+  // ── helpers de display (nunca mostra negativos) ────────────────────────────
+  const n = v => Math.max(0, v || 0);
+
+  // ── content ────────────────────────────────────────────────────────────────
+  let body = '';
+
+  // Phase 1 — Identificação
+  const p1y = 15, p1h = 148;
+  body += phaseBox(mx, p1y, mw, p1h, C.id, 'IDENTIFICAÇÃO', [
+    `SciELO: ${n(id.scielo)} registros`,
+    `BDTD: ${n(id.bdtd)} registros`,
+    `Periódicos CAPES: ${n(id.capes)} registros`,
+    `Total bruto: ${n(id.total)}`,
+  ]);
+  // Side: duplicatas
+  const dupLines = ['Duplicatas removidas:', `n = ${n(id.duplicatas)}`];
+  const dupSide  = sideBox(sx, p1y + Math.round(p1h / 2) - 28, sw, dupLines);
+  body += dupSide.svg;
+  body += arrowRight(mx + mw, sx, p1y + p1h / 2);
+
+  // ↓ arrow to Triagem
+  const p2y = p1y + p1h + 28;
+  body += arrowDown(mc, p1y + p1h, p2y);
+
+  // Phase 2 — Triagem
+  const p2h  = 72;
+  const dedup = n(id.unicos);   // total único = registros após deduplicação
+  body += phaseBox(mx, p2y, mw, p2h, C.tri, 'TRIAGEM', [
+    `Registros após deduplicação:`,
+    `n = ${dedup}`,
+  ]);
+
+  // ↓ arrow to Elegibilidade
+  const p3y = p2y + p2h + 28;
+  body += arrowDown(mc, p2y + p2h, p3y);
+
+  // Phase 3 — Elegibilidade
+  const p3h    = 72;
+  const p3lines = filtrado
+    ? [`Registros avaliados pela IA:`, `n = ${dedup}`]
+    : [`(aguardando filtragem com IA)`, `n = ${dedup}`];
+  body += phaseBox(mx, p3y, mw, p3h, C.eleg, 'ELEGIBILIDADE', p3lines);
+
+  // Side: exclusions with criteria breakdown
+  if (filtrado) {
+    const excLines = [`Excluídos (n = ${n(eleg.excluidos)}):`];
+    const entries  = Object.entries(motivos).sort((a, b) => a[0].localeCompare(b[0]));
+    if (entries.length > 0) {
+      for (const [code, cnt] of entries) excLines.push(`${code}: ${cnt} artigo(s)`);
+    } else {
+      excLines.push(eleg.excluidos === 0 ? '(nenhum excluído)' : '(critério não registrado)');
+    }
+    const excH    = 26 + excLines.length * 17;
+    const excY    = Math.round(p3y + p3h / 2 - excH / 2);
+    const excSide = sideBox(sx, excY, sw, excLines);
+    body += excSide.svg;
+    body += arrowRight(mx + mw, sx, p3y + p3h / 2);
+  }
+
+  // ↓ arrow to Inclusão
+  const p4y = p3y + p3h + 28;
+  body += arrowDown(mc, p3y + p3h, p4y);
+
+  // Phase 4 — Inclusão
+  const p4h    = 90;
+  const p4lines = filtrado
+    ? [
+        `Estudos incluídos (Status = I): ${n(inc.incluidos)}`,
+        `Pendentes — revisão manual (P): ${n(inc.pendentes)}`,
+      ]
+    : ['(aguardando filtragem com IA)'];
+  body += phaseBox(mx, p4y, mw, p4h, C.inc, 'INCLUSÃO', p4lines);
+
+  // ── watermark / caption ────────────────────────────────────────────────────
+  const totalH = p4y + p4h + 30;
+  body += txt(W / 2, totalH - 10, 'Fluxograma PRISMA 2020 — RSL Buscador', {fs: 9.5, fill: '#94a3b8'});
+
+  return `<svg id="prisma-svg" xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 ${W} ${totalH}" width="${W}" height="${totalH}"
+    style="background:#fff;border-radius:8px;border:1px solid #e2e8f0">
+  <style>
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+  <defs>
+    <marker id="ah" viewBox="0 0 8 8" refX="7" refY="4"
+      markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#64748b"/>
+    </marker>
+  </defs>
+  ${body}
+</svg>`;
+}
+
+// ── exportar PNG ──────────────────────────────────────────────────────────────
+function exportarPNG() {
+  const svg = document.getElementById('prisma-svg');
+  if (!svg) return;
+
+  const w = svg.viewBox.baseVal.width;
+  const h = svg.viewBox.baseVal.height;
+  const scale = 2;
+
+  const data = new XMLSerializer().serializeToString(svg);
+  const blob = new Blob([data], { type: 'image/svg+xml;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+
+  const img  = new Image();
+  img.onload = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width  = w * scale;
+    canvas.height = h * scale;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(scale, scale);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+    URL.revokeObjectURL(url);
+    const a = document.createElement('a');
+    a.href     = canvas.toDataURL('image/png');
+    a.download = 'PRISMA_2020_RSL.png';
+    a.click();
+  };
+  img.src = url;
+}
+
+// ── init ───────────────────────────────────────────────────────────────────────
+carregarArquivos();
+</script>
+</body>
+</html>

@@ -355,28 +355,34 @@ Onde status é:
             idx_autores   = col("Autores")
 
             rows  = list(aba.iter_rows(min_row=2))
-            total = len(rows)
+            total = sum(1 for r in rows if idx_titulo >= 0 and r[idx_titulo].value)
             inc = exc = pen = 0
+            processados = 0
 
-            # Para atualizar Tabela 2: {descritor: {base: qtd_incluidos}}
-            contagem_i: dict[str, dict[str, int]] = {}
+            # Coleta dados durante classificação — evita re-leitura de células modificadas
+            artigos_classificados = []
 
             q.put({"type": "etapa", "data": f"Classificando {total} artigos com {MODELO}..."})
 
-            for i, row in enumerate(rows, 1):
+            for row in rows:
                 titulo = str(row[idx_titulo].value or "").strip() if idx_titulo >= 0 else ""
-                resumo = str(row[idx_resumo].value or "").strip() if idx_resumo >= 0 else ""
-                ano    = str(row[idx_ano].value    or "").strip() if idx_ano    >= 0 else ""
-                base   = str(row[idx_base].value   or "").strip() if idx_base   >= 0 else ""
-                desc   = str(row[idx_descritor].value or "").strip() if idx_descritor >= 0 else ""
                 if not titulo:
                     continue
+
+                processados += 1
+                resumo  = str(row[idx_resumo   ].value or "").strip() if idx_resumo    >= 0 else ""
+                ano     = str(row[idx_ano      ].value or "").strip() if idx_ano       >= 0 else ""
+                base    = str(row[idx_base     ].value or "").strip() if idx_base      >= 0 else ""
+                desc    = str(row[idx_descritor].value or "").strip() if idx_descritor >= 0 else ""
+                doi     = str(row[idx_doi      ].value or "").strip() if idx_doi       >= 0 else ""
+                autores = str(row[idx_autores  ].value or "").strip() if idx_autores   >= 0 else ""
 
                 prompt = (
                     f"{PROMPT_CRITERIOS}\n\n"
                     f"Título: {titulo}\n"
                     f"Ano: {ano}\n"
                     f"Resumo: {resumo[:800]}\n\n"
+                    'Responda APENAS com JSON, exemplo: {"status":"I","criterio":"I3, I4","justificativa":"motivo"}\n'
                     "JSON:"
                 )
 
@@ -391,94 +397,93 @@ Onde status é:
                         timeout=90,
                     )
                     texto = resp.json().get("response", "").strip()
-                    # extrai o primeiro bloco JSON da resposta
                     m = _re.search(r'\{[^{}]+\}', texto, _re.DOTALL)
                     if m:
-                        dados = _json.loads(m.group())
-                        classificacao = str(dados.get("status", "P")).strip().upper()
-                        if classificacao not in ("I", "E", "P"):
-                            classificacao = "P"
-                        criterio      = str(dados.get("criterio", "")).strip()
-                        justificativa = str(dados.get("justificativa", "")).strip()
-                    elif texto and texto[0] in "IEP":
-                        classificacao = texto[0]
+                        try:
+                            dados = _json.loads(m.group())
+                            classificacao = str(dados.get("status", "P")).strip().upper()
+                            if classificacao not in ("I", "E", "P"):
+                                classificacao = "P"
+                            criterio      = str(dados.get("criterio", "")).strip()
+                            justificativa = str(dados.get("justificativa", "")).strip()
+                        except _json.JSONDecodeError:
+                            pass
+                    # fallback: resposta sem JSON
+                    if not criterio and not justificativa:
+                        # tenta detectar status pela primeira letra
+                        for ch in texto.upper():
+                            if ch in "IEP":
+                                classificacao = ch
+                                break
+                        # gera justificativa padrão baseada no status
+                        justificativa = {
+                            "I": "Incluído pela análise automática — revisar critérios manualmente",
+                            "E": "Excluído pela análise automática — revisar critérios manualmente",
+                            "P": "Pendente — requer leitura completa para decisão",
+                        }.get(classificacao, "Pendente — requer leitura completa")
                 except Exception as e:
-                    print(f"  [Ollama] Erro no artigo {i}: {e}")
+                    print(f"  [Ollama] Erro no artigo {processados}: {e}")
                     classificacao = "P"
+                    justificativa = "Erro na análise automática — revisar manualmente"
 
+                # Atualiza células na aba "Todos os Resultados"
                 if idx_status >= 0:
                     row[idx_status].value = classificacao
                 if idx_motivo >= 0:
-                    if criterio and justificativa:
-                        row[idx_motivo].value = f"[{criterio}] {justificativa}"
-                    elif justificativa:
-                        row[idx_motivo].value = justificativa
-                    elif classificacao == "E":
-                        row[idx_motivo].value = "Excluído pela análise automática"
+                    motivo_txt = f"[{criterio}] {justificativa}" if criterio else justificativa
+                    row[idx_motivo].value = motivo_txt
 
-                if classificacao == "I":
-                    inc += 1
-                    contagem_i.setdefault(desc, {})
-                    contagem_i[desc][base] = contagem_i[desc].get(base, 0) + 1
-                elif classificacao == "E":
-                    exc += 1
-                else:
-                    pen += 1
+                if classificacao == "I":   inc += 1
+                elif classificacao == "E": exc += 1
+                else:                      pen += 1
+
+                # Guarda para preencher Tabela 2 depois
+                artigos_classificados.append({
+                    "base":    base,    "desc":    desc,    "titulo":   titulo,
+                    "autores": autores, "ano":     ano,     "doi":      doi,
+                    "status":  classificacao,
+                    "criterio":      criterio,
+                    "justificativa": justificativa,
+                })
 
                 q.put({
                     "type":          "progresso_filtrar",
-                    "atual":         i,
+                    "atual":         processados,
                     "total":         total,
                     "classificacao": classificacao,
                     "criterio":      criterio,
                 })
 
-            # ── Preenche Tabela 2 - Pós Filtragem com artigos classificados ─
-            if "Tabela 2 - Pós Filtragem" in wb.sheetnames:
-                aba2  = wb["Tabela 2 - Pós Filtragem"]
+            # ── Preenche Tabela 2 com dados coletados (não re-lê células) ────
+            if "Pós Filtragem" in wb.sheetnames and artigos_classificados:
+                aba2  = wb["Pós Filtragem"]
                 hdrs2 = [c.value for c in aba2[1]]
 
                 def col2(nome):
-                    try: return hdrs2.index(nome) + 1   # 1-based para aba2.cell()
+                    try: return hdrs2.index(nome) + 1
                     except ValueError: return -1
 
-                # Remove linhas de dados anteriores (mantém cabeçalho + instrução)
                 if aba2.max_row > 2:
                     aba2.delete_rows(3, aba2.max_row - 2)
 
-                row_num = 3
-                for row in rows:
-                    titulo_v = str(row[idx_titulo].value or "").strip() if idx_titulo >= 0 else ""
-                    if not titulo_v:
-                        continue
-                    status_v  = str(row[idx_status ].value or "").strip() if idx_status  >= 0 else ""
-                    motivo_v  = str(row[idx_motivo ].value or "").strip() if idx_motivo  >= 0 else ""
-                    base_v    = str(row[idx_base   ].value or "").strip() if idx_base    >= 0 else ""
-                    desc_v    = str(row[idx_descritor].value or "").strip() if idx_descritor >= 0 else ""
-                    ano_v     = str(row[idx_ano    ].value or "").strip() if idx_ano     >= 0 else ""
-                    doi_v     = str(row[idx_doi    ].value or "").strip() if idx_doi     >= 0 else ""
-                    autores_v = str(row[idx_autores].value or "").strip() if idx_autores >= 0 else ""
-
-                    # Separa critério e justificativa do campo Motivo
-                    criterio_v = ""
-                    just_v     = motivo_v
-                    m = _re.match(r'\[([^\]]+)\]\s*(.*)', motivo_v, _re.DOTALL)
-                    if m:
-                        criterio_v = m.group(1)
-                        just_v     = m.group(2).strip()
-
+                for rn, a in enumerate(artigos_classificados, 3):
+                    motivo_tab2 = f"[{a['criterio']}] {a['justificativa']}" if a["criterio"] else a["justificativa"]
                     for campo, valor in [
-                        ("Base", base_v), ("Descritor", desc_v), ("Título", titulo_v),
-                        ("Autores", autores_v), ("Ano", ano_v), ("DOI", doi_v),
-                        ("Status (I/E/P)", status_v), ("Critério", criterio_v),
-                        ("Motivo Exclusão", just_v),
+                        ("Base",          a["base"]),
+                        ("Descritor",     a["desc"]),
+                        ("Título",        a["titulo"]),
+                        ("Autores",       a["autores"]),
+                        ("Ano",           a["ano"]),
+                        ("DOI",           a["doi"]),
+                        ("Status (I/E/P)", a["status"]),
+                        ("Critério",      a["criterio"]),
+                        ("Motivo Exclusão", a["justificativa"]),
                     ]:
                         c = col2(campo)
                         if c > 0:
-                            aba2.cell(row=row_num, column=c, value=valor)
-                    row_num += 1
+                            aba2.cell(row=rn, column=c, value=valor)
 
-                print(f"  ✅ Tabela 2 preenchida com {row_num - 3} artigos classificados")
+                print(f"  ✅ Tabela 2 preenchida com {len(artigos_classificados)} artigos classificados")
 
             ts_f = datetime.now().strftime("%Y%m%d_%H%M")
             # evita duplo sufixo _filtrado se já era um arquivo filtrado
@@ -592,6 +597,174 @@ def exportar_obsidian():
 
     threading.Thread(target=_run, daemon=True).start()
     return jsonify({"id": sid})
+
+
+# ─────────────────────────────────────────────
+# ROTA — PRISMA 2020
+# ─────────────────────────────────────────────
+
+def _extrair_dados_prisma(caminho: Path) -> dict:
+    """
+    Extrai contagens PRISMA 2020 da planilha RSL.
+
+    Fontes de dados:
+    ─ "Todos os Resultados":
+        · Linhas com Base ∈ {SciELO, BDTD, CAPES} → total único + status I/E/P
+        · Bloco de resumo (após linha "Termos Booleanos", até "TOTAL GERAL")
+          → brutos por base vindos diretamente da API, antes de qualquer dedup
+    ─ Total bruto = soma dos brutos do bloco (SciELO_bruto + BDTD_bruto + CAPES_bruto)
+    ─ Duplicatas  = max(0, total_bruto − total_único)  — sempre consistente
+    """
+    import re as _re
+    import openpyxl
+
+    wb = openpyxl.load_workbook(str(caminho), read_only=True, data_only=True)
+
+    dados: dict = {
+        "identificacao": {
+            "scielo": 0, "bdtd": 0, "capes": 0,
+            "total": 0, "unicos": 0, "duplicatas": 0,
+        },
+        "triagem":       {"apos_dedup": 0},
+        "elegibilidade": {"avaliados": 0, "excluidos": 0},
+        "inclusao":      {"incluidos": 0, "pendentes": 0},
+        "motivos":       {},
+        "filtrado":      False,
+        "validacoes":    {},
+        "avisos":        [],
+    }
+
+    BASES_VALIDAS = {"SciELO", "BDTD", "Periódicos CAPES"}
+
+    # ── 1. Total único por base + status (apenas artigos reais) ───────────────
+    unicos = 0
+
+    if "Todos os Resultados" in wb.sheetnames:
+        aba  = wb["Todos os Resultados"]
+        rows = list(aba.iter_rows(min_row=1, values_only=True))
+        if rows:
+            headers = list(rows[0])
+
+            def _col(nome):
+                try:    return headers.index(nome)
+                except ValueError: return -1
+
+            idx_base   = _col("Base")
+            idx_status = _col("Status (I/E/P)")
+            idx_motivo = _col("Motivo Exclusão")
+
+            for row in rows[1:]:
+                base = str(row[idx_base] or "").strip() if idx_base >= 0 else ""
+                if base not in BASES_VALIDAS:
+                    continue   # ignora bloco de resumo e linhas vazias
+
+                unicos += 1
+
+                if idx_status >= 0:
+                    s = str(row[idx_status] or "").strip().upper()
+                    if s in ("I", "E", "P"):
+                        dados["filtrado"] = True
+                    if s == "I":
+                        dados["inclusao"]["incluidos"] += 1
+                    elif s == "E":
+                        dados["elegibilidade"]["excluidos"] += 1
+                        if idx_motivo >= 0:
+                            motivo = str(row[idx_motivo] or "")
+                            for code in _re.findall(r'\b[EI]\d\b', motivo):
+                                dados["motivos"][code] = dados["motivos"].get(code, 0) + 1
+                    elif s == "P":
+                        dados["inclusao"]["pendentes"] += 1
+
+    # ── 2. Brutos por base: lidos do bloco de resumo ──────────────────────────
+    # Estrutura do bloco (col 0=descritor, 1=SciELO, 2=BDTD, 3=CAPES, 4=Total)
+    scielo_bruto = bdtd_bruto = capes_bruto = 0
+    bloco_encontrado = False
+
+    if "Todos os Resultados" in wb.sheetnames:
+        aba  = wb["Todos os Resultados"]
+        rows = list(aba.iter_rows(min_row=1, values_only=True))
+        em_bloco = False
+        for row in rows[1:]:
+            if row[0] == "Termos Booleanos":
+                em_bloco = True
+                bloco_encontrado = True
+                continue
+            if row[0] == "TOTAL GERAL":
+                break
+            if em_bloco and row[0] and isinstance(row[1], (int, float)):
+                scielo_bruto += int(row[1] or 0)
+                bdtd_bruto   += int(row[2] or 0)
+                capes_bruto  += int(row[3] or 0)
+
+    total_bruto = scielo_bruto + bdtd_bruto + capes_bruto
+
+    # Fallback: se o bloco não existir, estima pelo inverso (único + aba Duplicatas)
+    if not bloco_encontrado or total_bruto == 0:
+        dup_fallback = 0
+        if "Duplicatas" in wb.sheetnames:
+            aba_dup = wb["Duplicatas"]
+            dup_fallback = sum(
+                1 for row in aba_dup.iter_rows(min_row=2, values_only=True)
+                if any(v for v in row[:3] if v)
+            )
+        total_bruto  = unicos + dup_fallback
+        scielo_bruto = dados["identificacao"]["scielo"]
+        bdtd_bruto   = dados["identificacao"]["bdtd"]
+        capes_bruto  = dados["identificacao"]["capes"]
+        dados["avisos"].append(
+            "Bloco de resumo não encontrado — total bruto estimado como único + duplicatas da aba."
+        )
+
+    # ── 3. Duplicatas = total_bruto − total_único (nunca negativo) ────────────
+    duplicatas = max(0, total_bruto - unicos)
+
+    dados["identificacao"].update({
+        "scielo":     scielo_bruto,
+        "bdtd":       bdtd_bruto,
+        "capes":      capes_bruto,
+        "unicos":     unicos,
+        "duplicatas": duplicatas,
+        "total":      total_bruto,
+    })
+    dados["triagem"]["apos_dedup"]      = unicos
+    dados["elegibilidade"]["avaliados"] = unicos
+
+    # ── 4. Validações ─────────────────────────────────────────────────────────
+    ief = (dados["inclusao"]["incluidos"] +
+           dados["elegibilidade"]["excluidos"] +
+           dados["inclusao"]["pendentes"])
+    dados["validacoes"] = {
+        "bruto_positivo":    total_bruto > 0,
+        "dup_valida":        0 <= duplicatas <= total_bruto,
+        "dedup_positivo":    unicos > 0,
+        "total_consistente": (total_bruto - duplicatas) == unicos,
+        "ief_consistente":   (ief <= unicos) if dados["filtrado"] else None,
+    }
+
+    wb.close()
+    return dados
+
+
+@app.route("/prisma")
+def prisma():
+    return render_template("prisma.html")
+
+
+@app.route("/prisma/dados", methods=["POST"])
+def prisma_dados():
+    body    = request.get_json(silent=True) or {}
+    arquivo = body.get("arquivo", "").strip()
+    if not arquivo:
+        return jsonify({"erro": "Selecione uma planilha."}), 400
+    caminho = RESULTADOS / arquivo
+    if not caminho.exists():
+        return jsonify({"erro": f"Arquivo não encontrado: {arquivo}"}), 404
+    try:
+        dados = _extrair_dados_prisma(caminho)
+        return jsonify(dados)
+    except Exception:
+        import traceback
+        return jsonify({"erro": traceback.format_exc()}), 500
 
 
 # ─────────────────────────────────────────────

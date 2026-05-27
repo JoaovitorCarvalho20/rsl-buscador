@@ -70,6 +70,10 @@ def buscar_bdtd(descritor: str) -> list[dict]:
                 "page": page,
                 "sort": "year desc",
                 "filter[]": [f"publishDate:[{ANO_INICIO} TO {ANO_FIM}]"],
+                "field[]": [
+                    "title", "authors", "publicationDates", "summary",
+                    "formats", "publishers", "id", "urls",
+                ],
             }
             resp = SESSION.get(BDTD_API, params=params, timeout=20)
             resp.raise_for_status()
@@ -98,7 +102,8 @@ def buscar_bdtd(descritor: str) -> list[dict]:
                 else:
                     autores = str(autores_raw)
 
-                ano = str(rec.get("year", "")).strip()[:4]
+                pub_dates = rec.get("publicationDates", [])
+                ano = str(pub_dates[0]).strip()[:4] if pub_dates else ""
                 try:
                     if ano and not (ANO_INICIO <= int(ano) <= ANO_FIM):
                         continue
@@ -119,8 +124,12 @@ def buscar_bdtd(descritor: str) -> list[dict]:
                 else:
                     tipo = "Tese/Dissertação"
 
-                record_id = rec.get("id", "")
-                link = f"https://bdtd.ibict.br/vufind/Record/{record_id}" if record_id else ""
+                urls_raw = rec.get("urls", [])
+                if urls_raw and isinstance(urls_raw[0], dict):
+                    link = urls_raw[0].get("url", "")
+                else:
+                    record_id = rec.get("id", "")
+                    link = f"https://bdtd.ibict.br/vufind/Record/{record_id}" if record_id else ""
 
                 resultados.append({
                     "base": "BDTD",
@@ -341,7 +350,7 @@ def criar_aba_tabela1(ws, contagens):
     ws.freeze_panes = "A2"
 
 def criar_aba_tabela2(ws):
-    ws.title = "Tabela 2 - Pós Filtragem"
+    ws.title = "Pós Filtragem"
     headers = [
         "Base", "Descritor", "Título", "Autores",
         "Ano", "DOI", "Status (I/E/P)", "Critério", "Motivo Exclusão",
@@ -488,11 +497,11 @@ def gerar_excel(todos, unicos, duplicatas, contagens, caminho):
     wb = Workbook()
     wb.remove(wb.active)
 
-    criar_aba_tabela2(wb.create_sheet())
-
     ws_todos = wb.create_sheet()
     escrever_aba_dados(ws_todos, unicos, "Todos os Resultados")
     _adicionar_resumo_busca(ws_todos, contagens, len(unicos))
+
+    criar_aba_tabela2(wb.create_sheet())
 
     for base in ["SciELO", "BDTD", "Periódicos CAPES"]:
         filtrados = [r for r in unicos if r.get("base") == base]
